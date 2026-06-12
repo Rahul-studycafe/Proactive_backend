@@ -1,0 +1,68 @@
+import mongoose, { Schema, Document } from 'mongoose';
+
+export interface IClientCustomField {
+  label: string;
+  fieldType: 'text' | 'number' | 'select' | 'date' | 'email' | 'phone';
+  options?: string[]; // Only for 'select' type
+  isRequired: boolean;
+  orderIndex: number;
+}
+
+export interface ITenantSettings extends Document {
+  tenantId: mongoose.Types.ObjectId;
+  
+  clientCustomFields: IClientCustomField[];
+  
+  attendance: {
+    weekendDays: number[];
+    workingHoursPerDay: number;
+    overtimeThreshold: number;
+  };
+  
+  notifications: {
+    emailEnabled: boolean;
+    smsEnabled: boolean;
+    whatsappEnabled: boolean;
+  };
+  
+  allowDuplicateClientNames: boolean;
+  defaultGstPercentage: number;
+  financialYearStart: number;
+  
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const tenantSettingsSchema = new Schema<ITenantSettings>({
+  tenantId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, unique: true },
+  
+  // Client Custom Field Definitions
+  clientCustomFields: [{
+    label: { type: String, required: true },
+    fieldType: { type: String, enum: ['text', 'number', 'select', 'date', 'email', 'phone'], required: true },
+    options: [{ type: String }],
+    isRequired: { type: Boolean, default: false },
+    orderIndex: { type: Number, default: 0 }
+  }],
+  
+  // Attendance Config
+  attendance: {
+    weekendDays: { type: [Number], default: [0] }, // 0=Sunday
+    workingHoursPerDay: { type: Number, default: 8 },
+    overtimeThreshold: { type: Number, default: 480 } // minutes
+  },
+  
+  // Notification Config
+  notifications: {
+    emailEnabled: { type: Boolean, default: false },
+    smsEnabled: { type: Boolean, default: false },
+    whatsappEnabled: { type: Boolean, default: false }
+  },
+  
+  // Misc
+  allowDuplicateClientNames: { type: Boolean, default: false },
+  defaultGstPercentage: { type: Number, default: 18 },
+  financialYearStart: { type: Number, default: 4 } // April
+}, { timestamps: true });
+
+export const TenantSettings = mongoose.model<ITenantSettings>('TenantSettings', tenantSettingsSchema);

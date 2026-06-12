@@ -18,10 +18,14 @@ app.get('/', (req: Request, res: Response) => {
     sendSuccess(res, 200, 'API is running');
 });
 
+import authRoutes from './routes/auth.routes';
+
 // Dummy Route to test asyncHandler and ApiError (Phase 2 & Phase 3 test)
 app.get('/error-test', asyncHandler(async (req: Request, res: Response) => {
     throw new ApiError(400, 'This is a test error to verify the global error handler', 'TEST_ERROR');
 }));
+
+app.use('/api/v1/auth', authRoutes);
 
 // Fallback for 404 Not Found
 app.use((req: Request, res: Response, next: NextFunction) => {
