@@ -28,8 +28,8 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
 
   const { orgName, name, username, password, email } = parsed.data;
 
-  // Check if username already exists globally
-  const existingUser = await User.findOne({ username });
+  // Check if username already exists globally (skip tenant plugin — no context yet)
+  const existingUser = await User.findOne({ username }).setOptions({ skipTenantPlugin: true });
   if (existingUser) {
     throw new ApiError(409, 'Username already taken', 'USERNAME_TAKEN');
   }

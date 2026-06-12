@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import { tenantPlugin } from '../plugins/tenantPlugin';
 
 export interface IBillingEntity extends Document {
   tenantId: mongoose.Types.ObjectId;
@@ -66,5 +67,7 @@ billingEntitySchema.pre('validate', async function () {
     }
   }
 });
+
+billingEntitySchema.plugin(tenantPlugin);
 
 export const BillingEntity = mongoose.model<IBillingEntity>('BillingEntity', billingEntitySchema);

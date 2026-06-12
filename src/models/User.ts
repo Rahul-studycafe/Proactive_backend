@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document } from 'mongoose';
 import bcrypt from 'bcryptjs';
+import { tenantPlugin } from '../plugins/tenantPlugin';
 
 export interface IUser extends Document {
   tenantId: mongoose.Types.ObjectId;
@@ -57,5 +58,7 @@ userSchema.methods.comparePassword = async function (candidatePassword: string):
   if (!this.password) return false;
   return bcrypt.compare(candidatePassword, this.password);
 };
+
+userSchema.plugin(tenantPlugin);
 
 export const User = mongoose.model<IUser>('User', userSchema);

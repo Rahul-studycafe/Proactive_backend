@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import mongoose from 'mongoose';
 import connectDB from '../config/db';
 import { Organization } from '../models/Organization';
@@ -6,29 +7,33 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const runTest = async () => {
-  try {
-    await connectDB();
-    console.log('--- Starting Phase 5 Test ---');
+describe('Phase 5: TenantSettings Model', () => {
+  let orgId: mongoose.Types.ObjectId;
 
-    // Clean up previous runs
+  beforeAll(async () => {
+    await connectDB();
     await Organization.deleteOne({ slug: 'phase5-org' });
     
-    // Create a dummy Organization
     const newOrg = new Organization({
       name: 'Phase 5 Org',
       slug: 'phase5-org',
       plan: { maxUsers: 5 }
     });
     const savedOrg = await newOrg.save();
-    console.log('✅ Dummy Organization created with ID:', savedOrg._id);
+    orgId = savedOrg._id as mongoose.Types.ObjectId;
 
-    // Clean up TenantSettings if it existed
-    await TenantSettings.deleteOne({ tenantId: savedOrg._id });
+    await TenantSettings.deleteOne({ tenantId: orgId }).setOptions({ skipTenantPlugin: true });
+  });
 
-    // Create TenantSettings
+  afterAll(async () => {
+    await Organization.deleteOne({ slug: 'phase5-org' });
+    await TenantSettings.deleteOne({ tenantId: orgId }).setOptions({ skipTenantPlugin: true });
+    await mongoose.connection.close();
+  });
+
+  it('should save TenantSettings successfully', async () => {
     const newSettings = new TenantSettings({
-      tenantId: savedOrg._id,
+      tenantId: orgId,
       clientCustomFields: [
         { label: 'GSTIN', fieldType: 'text', isRequired: true, orderIndex: 1 },
         { label: 'Client Category', fieldType: 'select', options: ['A', 'B', 'C'], isRequired: false, orderIndex: 2 }
@@ -38,26 +43,11 @@ const runTest = async () => {
     });
 
     const savedSettings = await newSettings.save();
-    console.log('✅ TenantSettings saved successfully!');
-    console.log(`   - Custom Fields count: ${savedSettings.clientCustomFields.length}`);
-    console.log(`   - Allow Duplicates: ${savedSettings.allowDuplicateClientNames}`);
-    
-    // Retrieve TenantSettings
-    const retrievedSettings = await TenantSettings.findOne({ tenantId: savedOrg._id });
-    if (retrievedSettings) {
-       console.log('✅ Retrieved TenantSettings successfully from database.');
-    } else {
-       console.error('❌ Failed to retrieve TenantSettings.');
-    }
+    expect(savedSettings._id).toBeDefined();
+    expect(savedSettings.clientCustomFields.length).toBe(2);
+    expect(savedSettings.allowDuplicateClientNames).toBe(true);
 
-  } catch (error) {
-    console.error('❌ Phase 5 Test Failed:', error);
-  } finally {
-    await Organization.deleteOne({ slug: 'phase5-org' });
-    console.log('--- Cleanup Finished ---');
-    await mongoose.disconnect();
-    process.exit(0);
-  }
-};
-
-runTest();
+    const retrievedSettings = await TenantSettings.findOne({ tenantId: orgId }).setOptions({ skipTenantPlugin: true });
+    expect(retrievedSettings).not.toBeNull();
+  });
+});

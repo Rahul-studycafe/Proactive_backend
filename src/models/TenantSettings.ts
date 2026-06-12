@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import { tenantPlugin } from '../plugins/tenantPlugin';
 
 export interface IClientCustomField {
   label: string;
@@ -64,5 +65,7 @@ const tenantSettingsSchema = new Schema<ITenantSettings>({
   defaultGstPercentage: { type: Number, default: 18 },
   financialYearStart: { type: Number, default: 4 } // April
 }, { timestamps: true });
+
+tenantSettingsSchema.plugin(tenantPlugin);
 
 export const TenantSettings = mongoose.model<ITenantSettings>('TenantSettings', tenantSettingsSchema);

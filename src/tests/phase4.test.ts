@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import mongoose from 'mongoose';
 import connectDB from '../config/db';
 import { Organization } from '../models/Organization';
@@ -6,15 +7,20 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const runTest = async () => {
-  try {
+describe('Phase 4: Organization and Billing Models', () => {
+  beforeAll(async () => {
     await connectDB();
-    console.log('--- Starting Phase 4 Test ---');
-
-    // Clean up if it already exists
     await Organization.deleteOne({ slug: 'test-org-slug' });
+    await BillingEntity.deleteMany({ gstin: '22AAAAA0000A1Z5' }).setOptions({ skipTenantPlugin: true });
+  });
 
-    // Save Organization
+  afterAll(async () => {
+    await Organization.deleteOne({ slug: 'test-org-slug' });
+    await BillingEntity.deleteMany({ gstin: '22AAAAA0000A1Z5' }).setOptions({ skipTenantPlugin: true });
+    await mongoose.connection.close();
+  });
+
+  it('should save Organization and BillingEntity successfully', async () => {
     const newOrg = new Organization({
       name: 'Test Organization',
       slug: 'test-org-slug',
@@ -23,43 +29,18 @@ const runTest = async () => {
     });
     
     const savedOrg = await newOrg.save();
-    console.log('✅ Organization Saved Successfully:', savedOrg.name);
+    expect(savedOrg._id).toBeDefined();
 
-    // Save Billing Entity
     const newBilling = new BillingEntity({
       tenantId: savedOrg._id,
-      name: 'Test Billing LLC',
+      name: 'Test Billing LLC', // Should be overwritten by hook to 'Test Organization'
       gstin: '22AAAAA0000A1Z5'
     });
 
     const savedBilling = await newBilling.save();
-    console.log('✅ BillingEntity Saved Successfully:', savedBilling.name);
-
-    // Retrieve Data
-    const retrievedOrg = await Organization.findOne({ slug: 'test-org-slug' });
-    if (retrievedOrg) {
-      console.log('✅ Retrieved Organization:', retrievedOrg.slug);
-    } else {
-      console.error('❌ Failed to retrieve Organization');
-    }
-
-    const retrievedBilling = await BillingEntity.findOne({ tenantId: savedOrg._id });
-    if (retrievedBilling) {
-      console.log('✅ Retrieved BillingEntity matching tenantId:', retrievedBilling.tenantId);
-    } else {
-      console.error('❌ Failed to retrieve BillingEntity');
-    }
-
-  } catch (error) {
-    console.error('❌ Test Failed:', error);
-  } finally {
-    // Cleanup the database to keep it clean
-    await Organization.deleteOne({ slug: 'test-org-slug' });
-    await BillingEntity.deleteMany({ name: 'Test Billing LLC' });
-    console.log('--- Cleanup Finished ---');
-    await mongoose.disconnect();
-    process.exit(0);
-  }
-};
-
-runTest();
+    expect(savedBilling._id).toBeDefined();
+    
+    // BillingEntity validate hook syncs name from Organization
+    expect(savedBilling.name).toBe('Test Organization');
+  });
+});

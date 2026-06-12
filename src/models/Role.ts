@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import { tenantPlugin } from '../plugins/tenantPlugin';
 
 export type ScopeType = 'everything' | 'assigned_only' | 'team_only';
 
@@ -165,5 +166,7 @@ const roleSchema = new Schema<IRole>({
 }, { timestamps: true });
 
 roleSchema.index({ tenantId: 1, name: 1 }, { unique: true });
+
+roleSchema.plugin(tenantPlugin);
 
 export const Role = mongoose.model<IRole>('Role', roleSchema);
