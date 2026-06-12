@@ -5,7 +5,14 @@ export interface IBillingEntity extends Document {
   name: string;
   gstin?: string;
   pan?: string;
-  address?: string;
+  address?: {
+    addressLine1?: string;
+    addressLine2?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    pincode?: string;
+  };
   logoUrl?: string;
   signatureUrl?: string;
   invoicePrefix: string;
@@ -23,7 +30,14 @@ const billingEntitySchema = new Schema<IBillingEntity>({
   name: { type: String, required: true },
   gstin: { type: String },
   pan: { type: String },
-  address: { type: String },
+  address: {
+    addressLine1: { type: String },
+    addressLine2: { type: String },
+    city: { type: String },
+    state: { type: String },
+    country: { type: String },
+    pincode: { type: String }
+  },
   
   // Brand Assets
   logoUrl: { type: String },
@@ -38,5 +52,19 @@ const billingEntitySchema = new Schema<IBillingEntity>({
   // Footer
   termsAndConditions: { type: String }
 }, { timestamps: true });
+
+billingEntitySchema.pre('validate', async function () {
+  const Organization = mongoose.model('Organization');
+  const org = await Organization.findById(this.tenantId) as any;
+  if (org) {
+    // Take values from organization schema to ensure they are not different
+    this.name = org.company || org.name;
+    this.gstin = org.gstin;
+    this.pan = org.pan;
+    if (org.address) {
+      this.address = org.address;
+    }
+  }
+});
 
 export const BillingEntity = mongoose.model<IBillingEntity>('BillingEntity', billingEntitySchema);

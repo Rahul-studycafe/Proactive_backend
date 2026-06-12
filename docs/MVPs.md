@@ -227,7 +227,6 @@ const organizationSchema = new mongoose.Schema({
   
   // SaaS Plan (Phase 5 enforcement, schema from day 1)
   plan: {
-    type: { type: String, enum: ['free', 'starter', 'professional', 'enterprise'], default: 'free' },
     maxUsers: { type: Number, default: 2 },
     expiresAt: { type: Date },
     razorpaySubscriptionId: { type: String }

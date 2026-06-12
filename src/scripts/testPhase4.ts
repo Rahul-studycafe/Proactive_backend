@@ -19,7 +19,7 @@ const runTest = async () => {
       name: 'Test Organization',
       slug: 'test-org-slug',
       email: 'test@example.com',
-      plan: { type: 'free', maxUsers: 5 }
+      plan: { maxUsers: 5 }
     });
     
     const savedOrg = await newOrg.save();
@@ -29,8 +29,7 @@ const runTest = async () => {
     const newBilling = new BillingEntity({
       tenantId: savedOrg._id,
       name: 'Test Billing LLC',
-      gstin: '22AAAAA0000A1Z5',
-      address: '123 Tech Street'
+      gstin: '22AAAAA0000A1Z5'
     });
 
     const savedBilling = await newBilling.save();
