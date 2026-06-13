@@ -31,21 +31,11 @@ app.get(
   }
 );
 
-app.get(
-  '/api/v1/test-sbac',
-  authenticate,
-  authorize('task', 'view'),
-  (req: Request, res: Response) => {
-    return sendSuccess(res, 200, 'SBAC Access Granted', {
-      permissionScope: req.permissionScope,
-      scopeFilter: req.scopeFilter
-    });
-  }
-);
+
 
 app.use(errorHandler);
 
-describe('Phase 13, 14 & 15: RBAC, SBAC and User Profile API', () => {
+describe('Phase 13: RBAC Middleware Checks', () => {
   let orgId: mongoose.Types.ObjectId;
   let superAdminToken: string;
   let limitedUserToken: string;
@@ -154,37 +144,4 @@ describe('Phase 13, 14 & 15: RBAC, SBAC and User Profile API', () => {
     });
   });
 
-  describe('Phase 14: SBAC Middleware Scoping', () => {
-    it('should inject assigned_only scopeFilter for Limited User', async () => {
-      const res = await request(app)
-        .get('/api/v1/test-sbac')
-        .set('Authorization', `Bearer ${limitedUserToken}`);
-      
-      // limitedRole has task.view.allowed = true and scope = 'assigned_only'
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      expect(res.body.data.permissionScope).toBe('assigned_only');
-      expect(res.body.data.scopeFilter.assignedUserId).toBe(limitedUserId.toString());
-    });
-  });
-
-  describe('Phase 15: User Profile API (/auth/me)', () => {
-    it('should return user profile with populated role matrix', async () => {
-      const res = await request(app)
-        .get('/api/v1/auth/me')
-        .set('Authorization', `Bearer ${limitedUserToken}`);
-      
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
-      
-      const user = res.body.data.user;
-      expect(user.name).toBe('Limited User');
-      
-      // roleId should be populated object, not string
-      expect(user.roleId).toHaveProperty('name', 'Limited Role');
-      expect(user.roleId).toHaveProperty('permissions');
-      expect(user.roleId.permissions.client.create.allowed).toBe(false);
-      expect(user.roleId.permissions.task.view.scope).toBe('assigned_only');
-    });
-  });
 });

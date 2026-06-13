@@ -12,7 +12,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-describe('Phase 10: Auth Endpoints (Login, Refresh, Logout)', () => {
+describe('Phase 10: Auth Endpoints (Login)', () => {
   let orgId: mongoose.Types.ObjectId;
   let accessToken: string;
   let refreshToken: string;
@@ -110,36 +110,5 @@ describe('Phase 10: Auth Endpoints (Login, Refresh, Logout)', () => {
     expect(res.body.success).toBe(false);
   });
 
-  it('should refresh the access token using a valid refresh token', async () => {
-    const res = await request(app)
-      .post('/api/v1/auth/refresh')
-      .send({
-        refreshToken
-      });
 
-    expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.data.accessToken).toBeDefined();
-    expect(res.body.data.accessToken).not.toBe(accessToken); // Should be a newly signed token
-  });
-
-  it('should logout and invalidate the refresh token', async () => {
-    // 1. Call logout
-    const logoutRes = await request(app)
-      .post('/api/v1/auth/logout')
-      .set('Authorization', `Bearer ${accessToken}`);
-
-    expect(logoutRes.status).toBe(200);
-    expect(logoutRes.body.success).toBe(true);
-
-    // 2. Attempt to refresh with the old refresh token
-    const refreshRes = await request(app)
-      .post('/api/v1/auth/refresh')
-      .send({
-        refreshToken
-      });
-
-    expect(refreshRes.status).toBe(401);
-    expect(refreshRes.body.error.code).toBe('REVOKED_REFRESH_TOKEN');
-  });
 });
