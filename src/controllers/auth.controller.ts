@@ -264,3 +264,23 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
 
   return sendSuccess(res, 200, 'Logged out successfully', null);
 });
+
+export const getMe = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  
+  if (!userId) {
+    throw new ApiError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  // Fetch the user and fully populate the role so the frontend
+  // receives the entire RBAC permission matrix
+  const user = await User.findById(userId)
+    .populate('roleId')
+    .setOptions({ skipTenantPlugin: true });
+
+  if (!user) {
+    throw new ApiError(404, 'User not found', 'USER_NOT_FOUND');
+  }
+
+  return sendSuccess(res, 200, 'User profile retrieved successfully', { user });
+});

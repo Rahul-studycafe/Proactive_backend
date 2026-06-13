@@ -84,6 +84,17 @@ The legal entity under which invoices and receipts are issued for the tenant.
 - **`POST /api/v1/auth/logout`**:
   - Protected route requiring a valid Access Token.
   - Clears the Refresh Token from the user's database record to invalidate it server-side.
+- **`GET /api/v1/auth/me`**:
+  - Protected route requiring a valid Access Token.
+  - Returns the User profile and fully populates the `Role` matrix to provide the frontend with all RBAC permissions.
+
+### Authorization Middleware (`authorize.ts`)
+The `authorize(module, action)` middleware enforces Role-Based Access Control (RBAC) and Scope-Based Access Control (SBAC).
+- Fetches the current User's `Role`.
+- **Super Admin Bypass**: If `isSuperAdmin` is true, allows access automatically and sets scope to `everything`.
+- **RBAC Check**: Validates that `role.permissions[module][action].allowed === true`. Returns `403 Forbidden` if denied.
+- **SBAC Injection**: Checks the scope (`everything`, `assigned_only`, `team_only`) and automatically injects `req.permissionScope` and `req.scopeFilter`.
+  - Example: For `assigned_only`, injects `req.scopeFilter = { assignedUserId: req.user._id }`. Downstream controllers must merge this filter into their Mongoose queries.
 
 ### Tokens (`src/services/auth.service.ts`)
 - **Access Token:** Short-lived (e.g., 15 minutes). Contains `userId`, `tenantId`, and `roleId`.

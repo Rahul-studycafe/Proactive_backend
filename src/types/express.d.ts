@@ -18,8 +18,14 @@ declare global {
       };
       /** The tenantId extracted from the JWT — NEVER from the client */
       tenantId?: mongoose.Types.ObjectId;
+      
+      /** The authorization scope determined by the authorize middleware */
+      permissionScope?: 'everything' | 'assigned_only' | 'team_only';
+      
+      /** The Mongoose filter object to apply data scoping (e.g., { assignedUserId: req.user._id }) */
+      scopeFilter?: any;
     }
   }
 }
 
-export {};
+export { };
