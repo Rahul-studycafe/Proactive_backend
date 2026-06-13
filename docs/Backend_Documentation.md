@@ -72,6 +72,16 @@ The legal entity under which invoices and receipts are issued for the tenant.
   - Creates a "Super Admin" Role.
   - Creates the first User (Super Admin) and hashes their password.
   - Returns JWT Access and Refresh Tokens.
+- **`POST /api/v1/auth/login`**:
+  - Validates `orgSlug`, `username`, and `password`.
+  - Returns JWT Access and Refresh Tokens.
+- **`POST /api/v1/auth/refresh`**:
+  - Accepts a valid Refresh Token.
+  - Checks if the token is valid, matches the database, and `tokenVersion` hasn't changed.
+  - Returns a new Access Token.
+- **`POST /api/v1/auth/logout`**:
+  - Protected route requiring a valid Access Token.
+  - Clears the Refresh Token from the user's database record to invalidate it server-side.
 
 ### Tokens (`src/services/auth.service.ts`)
 - **Access Token:** Short-lived (e.g., 15 minutes). Contains `userId`, `tenantId`, and `roleId`.
