@@ -8,6 +8,7 @@ import { ApiError } from './utils/ApiError';
 import { sendSuccess } from './utils/ApiResponse';
 import authRoutes from './routes/auth.routes';
 import healthRoutes from './routes/health.routes';
+import userRoutes from './routes/user.routes';
 
 const app: Express = express();
 
@@ -40,6 +41,7 @@ app.use('/api/v1/health', healthRoutes);
 app.use('/api/v1', authenticate);
 
 // Future protected routes will be mounted here, e.g.:
+app.use('/api/v1/users', userRoutes);
 // app.use('/api/v1/clients', clientRoutes);
 // app.use('/api/v1/tasks', taskRoutes);
 // app.use('/api/v1/invoices', invoiceRoutes);
