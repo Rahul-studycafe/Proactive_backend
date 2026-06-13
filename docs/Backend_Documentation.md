@@ -66,7 +66,9 @@ The legal entity under which invoices and receipts are issued for the tenant.
 ## 4. Authentication & Security Flow
 
 ### Endpoints
-- **`POST /api/v1/auth/register`**: 
+- **`GET /api/v1/health`**:
+  - Public route that returns server health, uptime, memory usage, and database connection status.
+- **`POST /api/v1/auth/register`**:  
   - Orchestrates the creation of an Organization.
   - Generates a default BillingEntity and TenantSettings.
   - Creates a "Super Admin" Role.

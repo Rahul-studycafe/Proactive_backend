@@ -7,6 +7,7 @@ import { asyncHandler } from './utils/asyncHandler';
 import { ApiError } from './utils/ApiError';
 import { sendSuccess } from './utils/ApiResponse';
 import authRoutes from './routes/auth.routes';
+import healthRoutes from './routes/health.routes';
 
 const app: Express = express();
 
@@ -27,6 +28,9 @@ app.get('/error-test', asyncHandler(async (req: Request, res: Response) => {
 
 // Auth routes are public (register, login, refresh)
 app.use('/api/v1/auth', authRoutes);
+
+// Health check endpoint (public)
+app.use('/api/v1/health', healthRoutes);
 
 // ─── Protected Routes (auth required, tenant-scoped) ────────────
 // All routes below this line require a valid JWT.
