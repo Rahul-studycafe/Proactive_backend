@@ -63,9 +63,12 @@ The legal entity under which invoices and receipts are issued for the tenant.
 
 ---
 
-## 4. Authentication & Security Flow
+## 4. Authentication, Security & User Management
 
-### Endpoints
+### Rate Limiting (`src/middlewares/rateLimiter.ts`)
+To prevent brute-force attacks, the `login` and `register` endpoints are protected by an IP-based rate limiter (max 10 requests per 15-minute window). Exceeding this limit returns a `429 Too Many Requests` error.
+
+### Auth Endpoints
 - **`GET /api/v1/health`**:
   - Public route that returns server health, uptime, memory usage, and database connection status.
 - **`POST /api/v1/auth/register`**:  
@@ -87,6 +90,13 @@ The legal entity under which invoices and receipts are issued for the tenant.
 - **`GET /api/v1/auth/me`**:
   - Protected route requiring a valid Access Token.
   - Returns the User profile and fully populates the `Role` matrix to provide the frontend with all RBAC permissions.
+
+### User Management Endpoints
+- **`POST /api/v1/users`**:
+  - Protected route. Requires `user.create` permission.
+  - Creates a new user under the current tenant. Payload includes `name`, `username`, `email`, `mobile`, `password`, `confirmPassword`, `photoUrl`, `roleId`, and `isActive`.
+
+
 
 ### Authorization Middleware (`authorize.ts`)
 The `authorize(module, action)` middleware enforces Role-Based Access Control (RBAC) and Scope-Based Access Control (SBAC).
