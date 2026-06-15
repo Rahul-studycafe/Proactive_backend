@@ -3,11 +3,11 @@ import request from 'supertest';
 import app from '../app';
 import mongoose from 'mongoose';
 import connectDB from '../config/db';
-import { Organization } from '../models/Organization';
-import { Role } from '../models/Role';
-import { User } from '../models/User';
-import { BillingEntity } from '../models/BillingEntity';
-import { TenantSettings } from '../models/TenantSettings';
+import { Organization } from '../modules/auth/schemas';
+import { Role } from '../modules/roles/schemas';
+import { User } from '../modules/auth/schemas';
+import { BillingEntity } from '../modules/masters/schemas';
+import { TenantSettings } from '../modules/masters/schemas';
 import dotenv from 'dotenv';
 
 dotenv.config();

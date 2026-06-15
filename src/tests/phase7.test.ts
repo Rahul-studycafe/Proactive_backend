@@ -5,7 +5,7 @@ import {
   verifyAccessToken, 
   verifyRefreshToken,
   TokenPayload
-} from '../services/auth.service';
+} from '../modules/auth/services/auth.service';
 import jwt from 'jsonwebtoken';
 
 describe('Phase 7: Auth Service (JWT Utilities)', () => {

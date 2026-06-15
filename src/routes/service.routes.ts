@@ -1,36 +1,32 @@
 import { Router } from 'express';
-import { authenticate } from '../middlewares/authenticate';
-import { authorize } from '../middlewares/authorize';
 import {
   getServices,
   getServiceById,
   createService,
   updateService,
   deleteService
-} from '../controllers/service.controller';
+} from '../modules/services/controllers/service.controller';
+import { authenticate } from '../middlewares/authenticate';
+import { authorize } from '../middlewares/authorize';
 
 const router = Router();
 
 // Protect all service routes
 router.use(authenticate);
 
-// Since services are system blueprints, they typically fall under settings/masters or a dedicated service module.
-// We use settings.manageMasters as per architecture for Service blueprints
-router.use(authorize('settings', 'manageMasters'));
-
 // List services
-router.get('/', getServices);
+router.get('/', authorize('settings', 'manageMasters'), getServices);
 
 // Get single service
-router.get('/:id', getServiceById);
+router.get('/:id', authorize('settings', 'manageMasters'), getServiceById);
 
 // Create service
-router.post('/', createService);
+router.post('/', authorize('settings', 'manageMasters'), createService);
 
 // Update service
-router.put('/:id', updateService);
+router.put('/:id', authorize('settings', 'manageMasters'), updateService);
 
 // Delete/Disable service
-router.delete('/:id', deleteService);
+router.delete('/:id', authorize('settings', 'manageMasters'), deleteService);
 
 export default router;

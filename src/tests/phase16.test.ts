@@ -3,8 +3,8 @@ import request from 'supertest';
 import app from '../app';
 import mongoose from 'mongoose';
 import connectDB from '../config/db';
-import { Organization } from '../models/Organization';
-import { User } from '../models/User';
+import { Organization } from '../modules/auth/schemas';
+import { User } from '../modules/auth/schemas';
 import dotenv from 'dotenv';
 
 dotenv.config();

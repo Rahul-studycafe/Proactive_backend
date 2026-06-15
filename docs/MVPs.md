@@ -27,91 +27,46 @@
 proactive/
 ├── server/
 │   ├── src/
+│   │   ├── common/
+│   │   │   ├── constants/               # Enums, status codes, permission keys
+│   │   │   ├── errors/                  # Custom api-error class
+│   │   │   ├── plugins/                 # Mongoose tenant plugin
+│   │   │   └── responses/               # Standardized api-response JSON wrapper
+│   │   │
 │   │   ├── config/
-│   │   │   ├── db.js                    # MongoDB connection with retry logic
-│   │   │   ├── env.js                   # Environment variable validation
-│   │   │   └── s3.js                    # S3-compatible storage client
+│   │   │   └── db.ts                    # MongoDB connection with retry logic
 │   │   │
-│   │   ├── middleware/
-│   │   │   ├── auth.js                  # JWT verification + user hydration
-│   │   │   ├── authorize.js             # RBAC permission + SBAC scope check
-│   │   │   ├── tenantScope.js           # Injects tenantId into req + validates isolation
-│   │   │   ├── errorHandler.js          # Global error handler
-│   │   │   ├── validate.js              # Joi/express-validator runner
-│   │   │   ├── rateLimiter.js           # Per-tenant rate limiting
-│   │   │   └── upload.js               # Multer + S3 streaming config
+│   │   ├── middlewares/
+│   │   │   ├── authenticate.ts          # JWT verification + user hydration
+│   │   │   ├── authorize.ts             # RBAC permission + SBAC scope check
+│   │   │   ├── error-handler.ts         # Global error handler
+│   │   │   └── rate-limiter.ts          # Per-tenant rate limiting
 │   │   │
-│   │   ├── models/
-│   │   │   ├── Organization.js
-│   │   │   ├── User.js
-│   │   │   ├── Role.js
-│   │   │   ├── Client.js
-│   │   │   ├── Service.js
-│   │   │   ├── Task.js
-│   │   │   ├── Invoice.js
-│   │   │   ├── Receipt.js
-│   │   │   ├── BillingEntity.js
-│   │   │   └── masters/
-│   │   │       ├── Tag.js
-│   │   │       ├── ClientGroup.js
-│   │   │       ├── PaymentMode.js
-│   │   │       ├── ExpenseCategory.js
-│   │   │       ├── Holiday.js
-│   │   │       └── DocumentType.js
+│   │   ├── modules/
+│   │   │   ├── auth/                    # Auth, Organization, User schemas & logic
+│   │   │   ├── clients/                 # Client schemas & controllers
+│   │   │   ├── health/                  # Health check endpoints
+│   │   │   ├── masters/                 # BillingEntity, TenantSettings, Tag, etc.
+│   │   │   ├── roles/                   # Role schema & logic
+│   │   │   ├── services/                # Service schemas & logic
+│   │   │   └── users/                   # User schemas & logic (excluding auth)
 │   │   │
 │   │   ├── routes/
-│   │   │   ├── index.js                 # Route aggregator
-│   │   │   ├── auth.routes.js
-│   │   │   ├── user.routes.js
-│   │   │   ├── role.routes.js
-│   │   │   ├── client.routes.js
-│   │   │   ├── service.routes.js
-│   │   │   ├── task.routes.js
-│   │   │   ├── invoice.routes.js
-│   │   │   ├── receipt.routes.js
-│   │   │   ├── ledger.routes.js
-│   │   │   ├── dashboard.routes.js
-│   │   │   └── master.routes.js
-│   │   │
-│   │   ├── controllers/
-│   │   │   ├── auth.controller.js
-│   │   │   ├── user.controller.js
-│   │   │   ├── role.controller.js
-│   │   │   ├── client.controller.js
-│   │   │   ├── service.controller.js
-│   │   │   ├── task.controller.js
-│   │   │   ├── invoice.controller.js
-│   │   │   ├── receipt.controller.js
-│   │   │   ├── ledger.controller.js
-│   │   │   ├── dashboard.controller.js
-│   │   │   └── master.controller.js
-│   │   │
-│   │   ├── services/                    # Business logic layer (heavy operations)
-│   │   │   ├── auth.service.js          # Token generation, password hashing
-│   │   │   ├── invoice.service.js       # Unbilled fetch, isBilled cascade, PDF
-│   │   │   ├── receipt.service.js       # Settlement with MongoDB transactions
-│   │   │   ├── ledger.service.js        # Running balance calculation
-│   │   │   └── sequence.service.js      # Auto-increment invoice/receipt numbers
-│   │   │
-│   │   ├── validators/                  # Joi schemas for request validation
-│   │   │   ├── auth.validator.js
-│   │   │   ├── user.validator.js
-│   │   │   ├── client.validator.js
-│   │   │   ├── service.validator.js
-│   │   │   ├── task.validator.js
-│   │   │   ├── invoice.validator.js
-│   │   │   └── receipt.validator.js
+│   │   │   ├── auth.routes.ts
+│   │   │   ├── client.routes.ts
+│   │   │   ├── health.routes.ts
+│   │   │   ├── master.routes.ts
+│   │   │   ├── role.routes.ts
+│   │   │   ├── service.routes.ts
+│   │   │   └── user.routes.ts
 │   │   │
 │   │   ├── utils/
-│   │   │   ├── ApiError.js              # Custom error class with statusCode
-│   │   │   ├── ApiResponse.js           # Standardized JSON response wrapper
-│   │   │   ├── asyncHandler.js          # Async/await try-catch wrapper
-│   │   │   ├── constants.js             # Enums, status codes, permission keys
-│   │   │   └── pdf/
-│   │   │       └── invoiceTemplate.js   # Invoice PDF generation (puppeteer/pdfkit)
+│   │   │   ├── async-handler.ts         # Async/await try-catch wrapper
+│   │   │   ├── tenant-context.ts        # Injects tenantId into req + validates isolation
+│   │   │   └── validate-request.ts      # Zod validation runner
 │   │   │
-│   │   ├── app.js                       # Express app setup (middleware, routes, error handler)
-│   │   └── server.js                    # HTTP server + DB connection + graceful shutdown
+│   │   ├── app.ts                       # Express app setup (middleware, routes, error handler)
+│   │   └── server.ts                    # HTTP server + DB connection + graceful shutdown
 │   │
 │   ├── tests/
 │   │   ├── unit/

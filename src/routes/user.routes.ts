@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createUser, getUsers, getUserById, updateUser } from '../controllers/user.controller';
+import { createUser, getUsers, getUserById, updateUser } from '../modules/users/controllers/user.controller';
 import { authenticate } from '../middlewares/authenticate';
 import { authorize } from '../middlewares/authorize';
 

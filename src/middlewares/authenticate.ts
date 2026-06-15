@@ -1,9 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
-import { verifyAccessToken } from '../services/auth.service';
-import { User } from '../models/User';
-import { ApiError } from '../utils/ApiError';
-import { runWithTenant } from '../utils/tenantContext';
+import { verifyAccessToken } from '../modules/auth/services/auth.service';
+import { User } from '../modules/auth/schemas';
+import { ApiError } from '../common/errors/api-error';
+import { runWithTenant } from '../utils/tenant-context';
 
 /**
  * Authentication middleware.

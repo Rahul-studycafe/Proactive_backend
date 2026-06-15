@@ -3,12 +3,12 @@ import request from 'supertest';
 import express, { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import connectDB from '../config/db';
-import { Organization } from '../models/Organization';
-import { Role } from '../models/Role';
-import { User } from '../models/User';
+import { Organization } from '../modules/auth/schemas';
+import { Role } from '../modules/roles/schemas';
+import { User } from '../modules/auth/schemas';
 import { authenticate } from '../middlewares/authenticate';
 import { sendSuccess } from '../utils/ApiResponse';
-import { generateAccessToken } from '../services/auth.service';
+import { generateAccessToken } from '../modules/auth/services/auth.service';
 import dotenv from 'dotenv';
 
 dotenv.config();

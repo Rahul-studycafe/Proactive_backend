@@ -11,7 +11,7 @@ import {
   settingsController,
   billingEntityController,
   getBootstrap
-} from '../controllers/master.controller';
+} from '../modules/masters/controllers/master.controller';
 
 const router = Router();
 

@@ -1,13 +1,13 @@
 import { Router } from 'express';
-import { authenticate } from '../middlewares/authenticate';
-import { authorize } from '../middlewares/authorize';
 import {
   getClients,
   getClientById,
   createClient,
   updateClient,
   deleteClient
-} from '../controllers/client.controller';
+} from '../modules/clients/controllers/client.controller';
+import { authenticate } from '../middlewares/authenticate';
+import { authorize } from '../middlewares/authorize';
 
 const router = Router();
 

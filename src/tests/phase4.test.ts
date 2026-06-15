@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import mongoose from 'mongoose';
 import connectDB from '../config/db';
-import { Organization } from '../models/Organization';
-import { BillingEntity } from '../models/BillingEntity';
+import { Organization } from '../modules/auth/schemas';
+import { BillingEntity } from '../modules/masters/schemas';
 import dotenv from 'dotenv';
 
 dotenv.config();

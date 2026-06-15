@@ -3,10 +3,10 @@ import request from 'supertest';
 import app from '../app';
 import mongoose from 'mongoose';
 import connectDB from '../config/db';
-import { Organization } from '../models/Organization';
-import { User } from '../models/User';
-import { Role } from '../models/Role';
-import { TenantSettings } from '../models/TenantSettings';
+import { Organization } from '../modules/auth/schemas';
+import { User } from '../modules/auth/schemas';
+import { Role } from '../modules/roles/schemas';
+import { TenantSettings } from '../modules/masters/schemas';
 import dotenv from 'dotenv';
 
 dotenv.config();

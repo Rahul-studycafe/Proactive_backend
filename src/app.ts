@@ -1,11 +1,11 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import { errorHandler } from './middlewares/errorHandler';
+import { errorHandler } from './middlewares/error-handler';
 import { authenticate } from './middlewares/authenticate';
-import { asyncHandler } from './utils/asyncHandler';
-import { ApiError } from './utils/ApiError';
-import { sendSuccess } from './utils/ApiResponse';
+import { asyncHandler } from './utils/async-handler';
+import { ApiError } from './common/errors/api-error';
+import { sendSuccess } from './common/responses/api-response';
 import authRoutes from './routes/auth.routes';
 import healthRoutes from './routes/health.routes';
 import userRoutes from './routes/user.routes';

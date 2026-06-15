@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
-import { ApiError } from '../utils/ApiError';
-import { Role, IRole } from '../models/Role';
+import { ApiError } from '../common/errors/api-error';
+import { Role, IRole } from '../modules/roles/schemas';
 
 /**
  * Middleware factory for Role-Based and Scope-Based Access Control.
@@ -48,8 +48,6 @@ export const authorize = (moduleName: keyof IRole['permissions'], actionName: st
       if (scope === 'assigned_only') {
          req.scopeFilter = { assignedUserId: req.user._id };
       } else if (scope === 'team_only') {
-         // Note: Assuming a 'teamMembers' array field will exist on models requiring team isolation.
-         // This filter can be customized later when the Team schema is fully finalized.
          req.scopeFilter = { teamMembers: req.user._id };
       } else {
          // 'everything'

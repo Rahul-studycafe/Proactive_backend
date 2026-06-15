@@ -3,9 +3,9 @@ import request from 'supertest';
 import app from '../app';
 import mongoose from 'mongoose';
 import connectDB from '../config/db';
-import { Organization } from '../models/Organization';
-import { Role } from '../models/Role';
-import { User } from '../models/User';
+import { Organization } from '../modules/auth/schemas';
+import { Role } from '../modules/roles/schemas';
+import { User } from '../modules/auth/schemas';
 import dotenv from 'dotenv';
 
 dotenv.config();
