@@ -1,0 +1,12 @@
+# Ignore the local node_modules because Docker will install its own Linux version
+node_modules
+
+# Ignore environment variables so secrets aren't baked into the image
+.env
+
+# Ignore git and husky files
+.git
+.husky
+
+# Ignore documentation
+docs
