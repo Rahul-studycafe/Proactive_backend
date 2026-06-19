@@ -3,11 +3,11 @@ import request from 'supertest';
 import app from '../app';
 import mongoose from 'mongoose';
 import connectDB from '../config/db';
-import { Organization } from '../models/Organization';
-import { User } from '../models/User';
-import { Role } from '../models/Role';
-import { Client } from '../models/Client';
-import { Service } from '../models/Service';
+import { Organization } from '../modules/auth/schemas';
+import { User } from '../modules/auth/schemas';
+import { Role } from '../modules/roles/schemas';
+import { Client } from '../modules/clients/schemas';
+import { Service } from '../modules/services/schemas';
 import { Task } from '../models/Task';
 import dotenv from 'dotenv';
 

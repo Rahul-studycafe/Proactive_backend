@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { Organization } from '../models/Organization';
+import { Organization } from '../modules/auth/schemas';
 
 /**
  * Atomically increments and fetches the next invoice number for a tenant.

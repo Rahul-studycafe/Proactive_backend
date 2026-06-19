@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
-import { asyncHandler } from '../utils/asyncHandler';
+import { asyncHandler } from '../utils/async-handler';
 import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../utils/ApiError';
 import { Task, TASK_STATUSES } from '../models/Task';
-import { Service } from '../models/Service';
+import { Service } from '../modules/services/schemas';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 
@@ -40,7 +40,7 @@ export const createTask = asyncHandler(async (req: Request, res: Response) => {
   if (data.serviceId) {
     const service = await Service.findOne({ _id: data.serviceId, tenantId: req.tenantId });
     if (service && service.checklist) {
-      checklist = service.checklist.map((step) => ({
+      checklist = service.checklist.map((step: any) => ({
         stepName: step.stepName,
         isCompleted: false
       }));

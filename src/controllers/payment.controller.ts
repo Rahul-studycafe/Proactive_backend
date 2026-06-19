@@ -1,15 +1,15 @@
 import { Request, Response } from 'express';
-import { asyncHandler } from '../utils/asyncHandler';
+import { asyncHandler } from '../utils/async-handler';
 import { ApiError } from '../utils/ApiError';
 import { sendSuccess } from '../utils/ApiResponse';
 import { PricingTier } from '../models/PricingTier';
-import { Organization } from '../models/Organization';
-import { User } from '../models/User';
-import { Role } from '../models/Role';
-import { BillingEntity } from '../models/BillingEntity';
-import { TenantSettings } from '../models/TenantSettings';
+import { Organization } from '../modules/auth/schemas';
+import { User } from '../modules/auth/schemas';
+import { Role } from '../modules/roles/schemas';
+import { BillingEntity } from '../modules/masters/schemas';
+import { TenantSettings } from '../modules/masters/schemas';
 import { sendWelcomeEmail } from '../services/email.service';
-import { generateAccessToken, generateRefreshToken } from '../services/auth.service';
+import { generateAccessToken, generateRefreshToken } from '../modules/auth/services/auth.service';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 

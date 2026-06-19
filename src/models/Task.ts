@@ -1,5 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
-import { tenantPlugin } from '../plugins/tenantPlugin';
+import { tenantPlugin } from '../common/plugins/tenant.plugin';
 
 export const TASK_STATUSES = ['Pending', 'In Progress', 'Under Review', 'On Hold', 'Completed', 'Cancelled'] as const;
 
