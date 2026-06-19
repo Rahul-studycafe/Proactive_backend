@@ -31,15 +31,20 @@ services:
     environment:
       - MONGO_INITDB_ROOT_USERNAME=root
       - MONGO_INITDB_ROOT_PASSWORD=secret
-    # 1. Start Mongo as a replica set named "rs0"
-    command: [ "--replSet", "rs0", "--bind_ip_all", "--port", "27017" ]
+    entrypoint: >
+      bash -c '
+      echo "c3VwZXJzZWNyZXRrZXlmaWxlY29udGVudHJhbmRvbWdlbmVyYXRlZGJhc2U2NA==" > /tmp/mongo-keyfile &&
+      chmod 400 /tmp/mongo-keyfile &&
+      chown 999:999 /tmp/mongo-keyfile &&
+      exec docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --port 27017 --keyFile /tmp/mongo-keyfile
+      '
     healthcheck:
-      # 2. Initiate the replica set if it hasn't been already
       test: |
         mongosh --port 27017 -u root -p secret --authenticationDatabase admin --eval "try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'localhost:27017' }] }).ok }"
       interval: 10s
       timeout: 10s
       retries: 5
+
   redis:
     image: redis:7.0-alpine
     container_name: proactive-redis

@@ -5,7 +5,7 @@ export interface IOrganization extends Document {
   company?: string;
   slug: string;
   ownerId?: mongoose.Types.ObjectId;
-  subscriptionStatus?: 'trial' | 'active' | 'past_due' | 'canceled';
+  subscriptionStatus?: 'pending_payment' | 'trial' | 'active' | 'past_due' | 'canceled';
   subscriptionDuration?: 'monthly' | 'yearly';
   renewalDate?: Date;
   plan: {
@@ -37,7 +37,7 @@ const organizationSchema = new Schema<IOrganization>({
   
   ownerId: { type: Schema.Types.ObjectId, ref: 'User' },
   
-  subscriptionStatus: { type: String, enum: ['trial', 'active', 'past_due', 'canceled'], default: 'trial' },
+  subscriptionStatus: { type: String, enum: ['pending_payment', 'trial', 'active', 'past_due', 'canceled'], default: 'pending_payment' },
   subscriptionDuration: { type: String, enum: ['monthly', 'yearly'], default: 'monthly' },
   renewalDate: { type: Date },
   

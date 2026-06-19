@@ -15,6 +15,7 @@ import clientRoutes from './routes/client.routes';
 import serviceRoutes from './routes/service.routes';
 import taskRoutes from './routes/task.routes';
 import invoiceRoutes from './routes/invoice.routes';
+import paymentRoutes from './routes/payment.routes';
 
 const app: Express = express();
 
@@ -35,6 +36,9 @@ app.get('/error-test', asyncHandler(async (req: Request, res: Response) => {
 
 // Auth routes are public (register, login, refresh)
 app.use('/api/v1/auth', authRoutes);
+
+// Payment routes (has both public pricing and protected checkout)
+app.use('/api/v1/payment', paymentRoutes);
 
 // Health check endpoint (public)
 app.use('/api/v1/health', healthRoutes);

@@ -8,7 +8,14 @@ import { Role } from '../../roles/schemas/index';
 import { BillingEntity } from '../../masters/schemas/index';
 import { TenantSettings } from '../../masters/schemas/index';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../services/auth.service';
+import Razorpay from 'razorpay';
 import z from 'zod';
+import { calculateSubscriptionPrice } from '../../../utils/pricing';
+
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID || 'dummy_key',
+  key_secret: process.env.RAZORPAY_KEY_SECRET || 'dummy_secret',
+});
 
 const registerSchema = z.object({
   orgName: z.string().min(2),
@@ -16,6 +23,9 @@ const registerSchema = z.object({
   username: z.string().min(4),
   password: z.string().min(6),
   email: z.string().email().optional(),
+  mobile: z.string().optional(),
+  usersCount: z.number().min(1).default(5),
+  promoCode: z.string().optional()
 });
 
 export const register = asyncHandler(async (req: Request, res: Response) => {
@@ -26,108 +36,55 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
     throw new ApiError(400, 'Validation Error', 'VALIDATION_FAILED', errors);
   }
 
-  const { orgName, name, username, password, email } = parsed.data;
+  const { usersCount, email, promoCode } = parsed.data;
 
-  // Check if username already exists globally (skip tenant plugin — no context yet)
-  const existingUser = await User.findOne({ username }).setOptions({ skipTenantPlugin: true });
-  if (existingUser) {
-    throw new ApiError(409, 'Username already taken', 'USERNAME_TAKEN');
-  }
-
-  // Generate a unique slug for the organization
-  let baseSlug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
-  let slug = baseSlug;
-  let counter = 1;
-  while (await Organization.findOne({ slug })) {
-    slug = `${baseSlug}-${counter}`;
-    counter++;
-  }
-
-  try {
-    // 1. Create Organization
-    const org = new Organization({
-      name: orgName,
-      slug,
-      plan: {
-        maxUsers: 5
+  // Clean up any old pending_payment garbage from previous tests
+  if (email) {
+    const existingUser = await User.findOne({ email }).setOptions({ skipTenantPlugin: true });
+    if (existingUser) {
+      const org = await Organization.findById(existingUser.tenantId);
+      if (org && org.subscriptionStatus === 'pending_payment') {
+        // Delete the stale test records to allow a fresh start
+        await User.deleteOne({ _id: existingUser._id });
+        await Organization.deleteOne({ _id: org._id });
+        await Role.deleteMany({ tenantId: org._id });
+        await BillingEntity.deleteMany({ tenantId: org._id });
+        await TenantSettings.deleteMany({ tenantId: org._id });
+      } else {
+        throw new ApiError(409, 'User with this email already exists and is active', 'USER_EXISTS');
       }
-    });
-    await org.save();
-
-    // 2. Create Super Admin Role
-    const superAdminRole = new Role({
-      tenantId: org._id,
-      name: 'Super Admin',
-      description: 'System generated super admin role',
-      isSuperAdmin: true,
-      permissions: {}
-    });
-    await superAdminRole.save();
-
-    // 3. Create User
-    const user = new User({
-      tenantId: org._id,
-      name,
-      username,
-      password, // hashed by pre-save hook
-      email,
-      roleId: superAdminRole._id,
-      tokenVersion: 1
-    });
-    await user.save();
-
-    // 4. Create Default BillingEntity
-    const billing = new BillingEntity({
-      tenantId: org._id,
-      name: orgName,
-      invoicePrefix: 'INV-',
-      receiptPrefix: 'RCT-'
-    });
-    await billing.save();
-
-    // 5. Create TenantSettings
-    const settings = new TenantSettings({
-      tenantId: org._id,
-      clientCustomFields: [],
-      allowDuplicateClientNames: false,
-      defaultGstPercentage: 18
-    });
-    await settings.save();
-
-    // Generate Tokens
-    const tokenPayload = {
-      userId: user._id.toString(),
-      tenantId: org._id.toString(),
-      roleId: superAdminRole._id.toString(),
-      tokenVersion: user.tokenVersion
-    };
-
-    const accessToken = generateAccessToken(tokenPayload);
-    const refreshToken = generateRefreshToken(tokenPayload);
-
-    user.refreshToken = refreshToken;
-    await user.save();
-
-    return sendSuccess(res, 201, 'Registration successful', {
-      accessToken,
-      refreshToken,
-      user: {
-        _id: user._id,
-        name: user.name,
-        username: user.username,
-        role: 'Super Admin'
-      },
-      organization: {
-        _id: org._id,
-        name: org.name,
-        slug: org.slug
-      }
-    });
-
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    throw new ApiError(500, 'Registration failed during document creation', 'REGISTRATION_FAILED', [errorMessage]);
+    }
   }
+
+  // Calculate standard price using SSOT
+  const pricingData = await calculateSubscriptionPrice(usersCount, promoCode);
+  const amountInPaise = pricingData.grandTotal * 100;
+  
+  // Create Razorpay Order
+  const options = {
+    amount: amountInPaise,
+    currency: 'INR',
+    receipt: `receipt_temp_${Date.now()}`,
+    notes: {
+      usersCount: usersCount.toString()
+    }
+  };
+  const order = await razorpay.orders.create(options);
+
+  return sendSuccess(res, 201, 'Registration order created', {
+    orderId: order.id,
+    amount: order.amount,
+    currency: order.currency
+  });
+});
+
+export const calculatePriceEndpoint = asyncHandler(async (req: Request, res: Response) => {
+  const users = parseInt(req.query.users as string) || 5;
+  const promoCode = req.query.promo as string | undefined;
+
+  const pricingData = await calculateSubscriptionPrice(users, promoCode);
+
+  return sendSuccess(res, 200, 'Price calculated', pricingData);
 });
 
 const loginSchema = z.object({
@@ -192,7 +149,8 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     organization: {
       _id: org._id,
       name: org.name,
-      slug: org.slug
+      slug: org.slug,
+      subscriptionStatus: org.subscriptionStatus
     }
   });
 });
