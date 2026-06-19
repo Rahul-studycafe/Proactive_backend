@@ -12,7 +12,8 @@
     "start": "node dist/server.js",
     "lint": "eslint .",
     "test": "jest",
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "seed:promo": "ts-node-dev --transpile-only scripts/add-promocode.ts"
   },
   "keywords": [],
   "author": "",
