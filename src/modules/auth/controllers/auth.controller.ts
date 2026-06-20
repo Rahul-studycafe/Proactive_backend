@@ -11,7 +11,9 @@ import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '.
 import Razorpay from 'razorpay';
 import z from 'zod';
 import { calculateSubscriptionPrice } from '../../../utils/pricing';
-
+import { Otp } from '../../../models/Otp';
+import { sendOtpEmail } from '../services/email.service';
+import crypto from 'crypto';
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID || 'dummy_key',
   key_secret: process.env.RAZORPAY_KEY_SECRET || 'dummy_secret',
@@ -54,6 +56,12 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
         throw new ApiError(409, 'User with this email already exists and is active', 'USER_EXISTS');
       }
     }
+
+    // Verify that the email was verified using OTP
+    const verifiedOtp = await Otp.findOne({ email: email.toLowerCase(), isVerified: true });
+    if (!verifiedOtp) {
+      throw new ApiError(400, 'Email is not verified. Please verify your email with OTP.', 'EMAIL_NOT_VERIFIED');
+    }
   }
 
   // Calculate standard price using SSOT
@@ -76,6 +84,86 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
     amount: order.amount,
     currency: order.currency
   });
+});
+
+const emailSchema = z.object({
+  email: z.string().email(),
+});
+
+export const sendOtp = asyncHandler(async (req: Request, res: Response) => {
+  const parsed = emailSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw new ApiError(400, 'Invalid email format', 'VALIDATION_FAILED');
+  }
+  
+  const { email } = parsed.data;
+  const normalizedEmail = email.toLowerCase();
+  
+  // Generate 6 digit OTP
+  const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+  
+  // 10 minutes expiration
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+  
+  try {
+    console.log(`[OTP Debug] Attempting to clear old OTPs for ${normalizedEmail}...`);
+    // Invalidate any previous OTPs for this email by simply overriding or deleting
+    await Otp.deleteMany({ email: normalizedEmail });
+
+    console.log(`[OTP Debug] Attempting to create new OTP in database...`);
+    // Create new OTP record
+    await Otp.create({
+      email: normalizedEmail,
+      otp: otpCode,
+      isVerified: false,
+      expiresAt,
+    });
+
+    console.log(`[OTP Debug] Attempting to send email via nodemailer...`);
+    // Send email
+    await sendOtpEmail(normalizedEmail, otpCode);
+    console.log(`[OTP Debug] Email sent successfully!`);
+  } catch (error) {
+    console.error('[OTP Debug] Error occurred:', error);
+    throw new ApiError(500, 'Failed to process OTP request. Check server logs.', 'OTP_FAILED');
+  }
+
+  return sendSuccess(res, 200, 'OTP sent successfully', null);
+});
+
+const verifyOtpSchema = z.object({
+  email: z.string().email(),
+  otp: z.string().length(6),
+});
+
+export const verifyOtp = asyncHandler(async (req: Request, res: Response) => {
+  const parsed = verifyOtpSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw new ApiError(400, 'Invalid input', 'VALIDATION_FAILED');
+  }
+
+  const { email, otp } = parsed.data;
+  const normalizedEmail = email.toLowerCase();
+
+  const existingOtp = await Otp.findOne({ email: normalizedEmail });
+
+  if (!existingOtp) {
+    throw new ApiError(400, 'No OTP request found for this email', 'OTP_NOT_FOUND');
+  }
+
+  if (existingOtp.expiresAt < new Date()) {
+    throw new ApiError(400, 'OTP has expired. Please request a new one.', 'OTP_EXPIRED');
+  }
+
+  if (existingOtp.otp !== otp) {
+    throw new ApiError(400, 'Invalid OTP', 'INVALID_OTP');
+  }
+
+  // Mark as verified
+  existingOtp.isVerified = true;
+  await existingOtp.save();
+
+  return sendSuccess(res, 200, 'Email verified successfully', null);
 });
 
 export const calculatePriceEndpoint = asyncHandler(async (req: Request, res: Response) => {
