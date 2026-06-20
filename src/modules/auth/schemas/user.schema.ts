@@ -25,7 +25,7 @@ const userSchema = new Schema<IUser>({
   // Identity
   name: { type: String, required: true, trim: true },
   username: { type: String, required: true, trim: true, lowercase: true },
-  email: { type: String, trim: true, lowercase: true },
+  email: { type: String, trim: true, lowercase: true, unique: true, sparse: true },
   mobile: { type: String },
   password: { type: String, required: true, select: false },  // Never sent to frontend
   

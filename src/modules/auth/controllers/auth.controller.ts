@@ -88,8 +88,7 @@ export const calculatePriceEndpoint = asyncHandler(async (req: Request, res: Res
 });
 
 const loginSchema = z.object({
-  orgSlug: z.string().min(2),
-  username: z.string().min(4),
+  email: z.string().email(),
   password: z.string().min(6)
 });
 
@@ -100,24 +99,27 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     throw new ApiError(400, 'Validation Error', 'VALIDATION_FAILED', errors);
   }
 
-  const { orgSlug, username, password } = parsed.data;
+  const { email, password } = parsed.data;
 
-  const org = await Organization.findOne({ slug: orgSlug });
-  if (!org) {
-    throw new ApiError(401, 'Invalid organization slug or credentials', 'INVALID_CREDENTIALS');
-  }
-
-  const user = await User.findOne({ username, tenantId: org._id })
+  // 1. Find user by email (globally unique)
+  const user = await User.findOne({ email })
+    .populate('roleId')
     .select('+password')
     .setOptions({ skipTenantPlugin: true });
 
   if (!user) {
-    throw new ApiError(401, 'Invalid organization slug or credentials', 'INVALID_CREDENTIALS');
+    throw new ApiError(401, 'Invalid email or password', 'INVALID_CREDENTIALS');
+  }
+
+  // 2. Load their organization to get token payload values
+  const org = await Organization.findById(user.tenantId);
+  if (!org) {
+    throw new ApiError(401, 'Organization not found for user', 'INVALID_CREDENTIALS');
   }
 
   const isMatch = await user.comparePassword(password);
   if (!isMatch) {
-    throw new ApiError(401, 'Invalid organization slug or credentials', 'INVALID_CREDENTIALS');
+    throw new ApiError(401, 'Invalid email or password', 'INVALID_CREDENTIALS');
   }
 
   if (!user.isActive) {
