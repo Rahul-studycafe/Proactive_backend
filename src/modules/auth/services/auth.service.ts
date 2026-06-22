@@ -47,3 +47,20 @@ export const verifyRefreshToken = (token: string): TokenPayload => {
     throw new ApiError(401, 'Invalid refresh token', 'INVALID_TOKEN');
   }
 };
+
+export const generateResetToken = (email: string): string => {
+  return jwt.sign({ email }, JWT_SECRET, {
+    expiresIn: '15m'
+  });
+};
+
+export const verifyResetToken = (token: string): { email: string } => {
+  try {
+    return jwt.verify(token, JWT_SECRET) as { email: string };
+  } catch (error: any) {
+    if (error.name === 'TokenExpiredError') {
+      throw new ApiError(400, 'Password reset link has expired', 'TOKEN_EXPIRED');
+    }
+    throw new ApiError(400, 'Invalid password reset link', 'INVALID_TOKEN');
+  }
+};

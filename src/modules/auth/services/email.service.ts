@@ -40,3 +40,36 @@ export const sendOtpEmail = async (to: string, otp: string): Promise<void> => {
 
   await transporter.sendMail(mailOptions);
 };
+
+/**
+ * Sends a password reset link to the user.
+ * @param to The recipient email address
+ * @param resetLink The full URL for resetting the password
+ */
+export const sendPasswordResetEmail = async (to: string, resetLink: string): Promise<void> => {
+    console.log("function called sendPasswordResetEmail")
+
+  const mailOptions = {
+    from: `"Proactive" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: 'Reset Your Password',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaeb; border-radius: 8px;">
+        <h2 style="color: #111; text-align: center;">Reset your password</h2>
+        <p style="color: #444; font-size: 16px;">
+          We received a request to reset the password for your account. Click the button below to set a new password. This link will expire in 15 minutes.
+        </p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${resetLink}" style="background-color: #111; color: #fff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; display: inline-block;">
+            Reset Password
+          </a>
+        </div>
+        <p style="color: #666; font-size: 14px;">
+          If you didn't request a password reset, you can safely ignore this email.
+        </p>
+      </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+};

@@ -27,7 +27,6 @@ const seedPricingTiers = async () => {
         minUsers: 1,
         maxUsers: 5,
         pricePerUserMonthly: 99,
-        pricePerUserYearly: 1188,
         isActive: true
       },
       {
@@ -35,7 +34,6 @@ const seedPricingTiers = async () => {
         minUsers: 6,
         maxUsers: 10,
         pricePerUserMonthly: 91,
-        pricePerUserYearly: 1092,
         isActive: true
       },
       {
@@ -43,7 +41,6 @@ const seedPricingTiers = async () => {
         minUsers: 11,
         maxUsers: 30,
         pricePerUserMonthly: 83,
-        pricePerUserYearly: 996,
         isActive: true
       },
       {
@@ -51,7 +48,6 @@ const seedPricingTiers = async () => {
         minUsers: 31,
         maxUsers: 99999, // Allows up to any number, but represents the 31-100+ tier
         pricePerUserMonthly: 75,
-        pricePerUserYearly: 900,
         isActive: true
       }
     ];

@@ -7,13 +7,14 @@ import { User } from '../schemas';
 import { Role } from '../../roles/schemas/index';
 import { BillingEntity } from '../../masters/schemas/index';
 import { TenantSettings } from '../../masters/schemas/index';
-import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../services/auth.service';
+import { generateAccessToken, generateRefreshToken, verifyRefreshToken, generateResetToken, verifyResetToken } from '../services/auth.service';
 import Razorpay from 'razorpay';
 import z from 'zod';
 import { calculateSubscriptionPrice } from '../../../utils/pricing';
 import { Otp } from '../../../models/Otp';
-import { sendOtpEmail } from '../services/email.service';
+import { sendOtpEmail, sendPasswordResetEmail } from '../services/email.service';
 import crypto from 'crypto';
+import { PricingTier } from '../../../models/PricingTier';
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID || 'dummy_key',
   key_secret: process.env.RAZORPAY_KEY_SECRET || 'dummy_secret',
@@ -79,6 +80,20 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
   };
   const order = await razorpay.orders.create(options);
 
+  // Save the intent so the webhook can process it if the browser closes
+  const { PendingRegistration } = require('../../../models/PendingRegistration');
+  await PendingRegistration.create({
+    orderId: order.id,
+    orgName: parsed.data.orgName,
+    name: parsed.data.name,
+    username: parsed.data.username,
+    password: parsed.data.password,
+    email: email,
+    mobile: parsed.data.mobile || '',
+    usersCount: usersCount,
+    promoCode: promoCode || ''
+  });
+
   return sendSuccess(res, 201, 'Registration order created', {
     orderId: order.id,
     amount: order.amount,
@@ -92,6 +107,8 @@ const emailSchema = z.object({
 
 export const sendOtp = asyncHandler(async (req: Request, res: Response) => {
   const parsed = emailSchema.safeParse(req.body);
+
+  console.log("function called")
   if (!parsed.success) {
     throw new ApiError(400, 'Invalid email format', 'VALIDATION_FAILED');
   }
@@ -99,6 +116,16 @@ export const sendOtp = asyncHandler(async (req: Request, res: Response) => {
   const { email } = parsed.data;
   const normalizedEmail = email.toLowerCase();
   
+  // Check if user already exists before sending OTP
+  const existingUser = await User.findOne({ email: normalizedEmail }).setOptions({ skipTenantPlugin: true });
+  if (existingUser) {
+    const org = await Organization.findById(existingUser.tenantId);
+    // If the org is active (or anything other than pending_payment), we reject the OTP request
+    if (org && org.subscriptionStatus !== 'pending_payment') {
+      throw new ApiError(409, 'User with this email already exists', 'USER_EXISTS');
+    }
+  }
+
   // Generate 6 digit OTP
   const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
   
@@ -173,6 +200,11 @@ export const calculatePriceEndpoint = asyncHandler(async (req: Request, res: Res
   const pricingData = await calculateSubscriptionPrice(users, promoCode);
 
   return sendSuccess(res, 200, 'Price calculated', pricingData);
+});
+
+export const getPricingTiersEndpoint = asyncHandler(async (req: Request, res: Response) => {
+  const tiers = await PricingTier.find({ isActive: true }).sort({ minUsers: 1 });
+  return sendSuccess(res, 200, 'Pricing tiers retrieved', tiers);
 });
 
 const loginSchema = z.object({
@@ -317,4 +349,60 @@ export const getMe = asyncHandler(async (req: Request, res: Response) => {
   }
 
   return sendSuccess(res, 200, 'User profile retrieved successfully', { user });
+});
+
+export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
+  const { email } = req.body;
+  if (!email) {
+    throw new ApiError(400, 'Email is required', 'EMAIL_REQUIRED');
+  }
+
+  const user = await User.findOne({ email }).setOptions({ skipTenantPlugin: true });
+  if (!user) {
+    // We don't throw an error to prevent email enumeration, but we return a success response
+    return sendSuccess(res, 200, 'If an account exists with this email, a reset link has been sent.', null);
+  }
+
+  const resetToken = generateResetToken(email);
+  const frontendAppUrl = process.env.FRONTEND_APP_URL;
+
+  if (!frontendAppUrl) {
+    throw new ApiError(500, 'Frontend application URL is not configured', 'SERVER_CONFIG_ERROR');
+  }
+
+  const resetLink = `${frontendAppUrl}/reset-password?token=${resetToken}`;
+  
+  try {
+    await sendPasswordResetEmail(email, resetLink);
+  } catch (error) {
+    // Log the error for debugging but still return a generic message to the client
+    console.error('Failed to send reset email:', error);
+    // Return a generic message so the user doesn't get specific error info
+    return sendSuccess(res, 200, 'If an account exists with this email, a reset link has been sent.', null);
+  }
+
+  return sendSuccess(res, 200, 'If an account exists with this email, a reset link has been sent.', null);
+});
+
+export const resetPassword = asyncHandler(async (req: Request, res: Response) => {
+  const { token, newPassword } = req.body;
+  if (!token || !newPassword) {
+    throw new ApiError(400, 'Token and new password are required', 'MISSING_FIELDS');
+  }
+
+  if (newPassword.length < 6) {
+    throw new ApiError(400, 'Password must be at least 6 characters', 'PASSWORD_TOO_SHORT');
+  }
+
+  const { email } = verifyResetToken(token);
+
+  const user = await User.findOne({ email }).setOptions({ skipTenantPlugin: true });
+  if (!user) {
+    throw new ApiError(404, 'User not found', 'USER_NOT_FOUND');
+  }
+
+  user.password = newPassword;
+  await user.save();
+
+  return sendSuccess(res, 200, 'Password has been reset successfully', null);
 });

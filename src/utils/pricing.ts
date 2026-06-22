@@ -11,6 +11,7 @@ export interface PricingCalculationResult {
   grandTotal: number;
   usersCount: number;
   pricePerUserYearly: number;
+  pricePerUserMonthly: number;
   promoCode?: string;
 }
 
@@ -29,11 +30,14 @@ export const calculateSubscriptionPrice = async (
     isActive: true
   });
 
+  
+
   if (!tier) {
     throw new ApiError(400, 'No pricing tier found for this number of users', 'NO_TIER_FOUND');
   }
 
-  const pricePerUserYearly = tier.pricePerUserYearly;
+  const pricePerUserMonthly = tier.pricePerUserMonthly;
+  const pricePerUserYearly = pricePerUserMonthly * 12;
   const baseAmount = pricePerUserYearly * usersCount;
   
   // 2. Validate Promo Code
@@ -69,6 +73,7 @@ export const calculateSubscriptionPrice = async (
     grandTotal,
     usersCount,
     pricePerUserYearly,
+    pricePerUserMonthly,
     promoCode: appliedPromoCode
   };
 };
