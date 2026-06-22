@@ -19,6 +19,9 @@ import paymentRoutes from './routes/payment.routes';
 
 const app: Express = express();
 
+// Trust the first proxy (e.g. Render/Heroku load balancer) to ensure correct client IP for rate-limiting
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(helmet());
 app.use(cors());
