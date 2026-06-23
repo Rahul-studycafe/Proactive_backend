@@ -9,7 +9,7 @@ export const authRateLimiter = rateLimit({
     success: false,
     error: {
       code: 'TOO_MANY_REQUESTS',
-      message: 'Too many login attempts from this IP, please try again after 15 minutes'
+      message: 'Too many login attempts, please try again after 15 minutes'
     }
   }
 });

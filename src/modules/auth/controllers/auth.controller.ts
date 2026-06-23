@@ -222,7 +222,7 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   const { email, password } = parsed.data;
 
   // 1. Find user by email (globally unique)
-  const user = await User.findOne({ email })
+  const user = await User.findOne({ email: email.toLowerCase() })
     .populate('roleId')
     .select('+password')
     .setOptions({ skipTenantPlugin: true });
