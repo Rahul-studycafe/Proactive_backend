@@ -5,6 +5,7 @@ export interface IPricingTier extends Document {
   minUsers: number;
   maxUsers: number;
   pricePerUserMonthly: number;
+  pricePerUserYearly: number;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -15,6 +16,7 @@ const pricingTierSchema = new Schema<IPricingTier>({
   minUsers: { type: Number, required: true },
   maxUsers: { type: Number, required: true },
   pricePerUserMonthly: { type: Number, required: true },
+  pricePerUserYearly: { type: Number, required: true },
   isActive: { type: Boolean, default: true }
 }, { timestamps: true });
 

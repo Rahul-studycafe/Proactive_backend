@@ -342,6 +342,7 @@ export const getMe = asyncHandler(async (req: Request, res: Response) => {
 
   const user = await User.findById(userId)
     .populate('roleId')
+    .populate('tenantId')
     .setOptions({ skipTenantPlugin: true });
 
   if (!user) {
@@ -349,6 +350,34 @@ export const getMe = asyncHandler(async (req: Request, res: Response) => {
   }
 
   return sendSuccess(res, 200, 'User profile retrieved successfully', { user });
+});
+
+export const uploadAvatar = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  
+  if (!userId) {
+    throw new ApiError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  if (!req.file) {
+    throw new ApiError(400, 'No file uploaded', 'FILE_REQUIRED');
+  }
+
+  // Generate URL for the uploaded file
+  // For production, use NEXT_PUBLIC_API_URL or similar, but relative is fine for now
+  const photoUrl = `/public/uploads/avatars/${req.file.filename}`;
+
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { photoUrl },
+    { new: true }
+  ).setOptions({ skipTenantPlugin: true });
+
+  if (!user) {
+    throw new ApiError(404, 'User not found', 'USER_NOT_FOUND');
+  }
+
+  return sendSuccess(res, 200, 'Avatar uploaded successfully', { photoUrl });
 });
 
 export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
