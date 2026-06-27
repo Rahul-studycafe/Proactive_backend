@@ -8,7 +8,7 @@ export interface IClient extends Document {
   entityType?: string;
   email?: string;
   mobile?: string;
-  phone?: string;
+  secondaryMobile?: string;
   address?: string;
   city?: string;
   state?: string;
@@ -17,7 +17,11 @@ export interface IClient extends Document {
   gstin?: string;
   photoUrl?: string;
   groupId?: mongoose.Types.ObjectId;
-  tags: mongoose.Types.ObjectId[];
+  tags: string[];
+  billingProfileId?: mongoose.Types.ObjectId;
+  contactPersonName?: string;
+  dateOfBirth?: Date;
+  openingBalance?: number;
   assignedUsers: mongoose.Types.ObjectId[];
   customFieldValues: Map<string, any>;
   subscribedServices: {
@@ -57,7 +61,7 @@ const clientSchema = new Schema<IClient>({
   // Contact
   email: { type: String, trim: true },
   mobile: { type: String },
-  phone: { type: String },
+  secondaryMobile: { type: String },
   address: { type: String },
   city: { type: String },
   state: { type: String },
@@ -70,8 +74,14 @@ const clientSchema = new Schema<IClient>({
   // Metadata / Classification
   photoUrl: { type: String, default: '' },
   groupId: { type: Schema.Types.ObjectId, ref: 'ClientGroup' },
-  tags: [{ type: Schema.Types.ObjectId, ref: 'Tag' }],
+  tags: [{ type: String }],
   assignedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+  
+  // Billing & Contact Person
+  billingProfileId: { type: Schema.Types.ObjectId, ref: 'Client' },
+  contactPersonName: { type: String, trim: true },
+  dateOfBirth: { type: Date },
+  openingBalance: { type: Number, default: 0 },
   
   // Dynamic Custom Fields
   customFieldValues: { type: Map, of: Schema.Types.Mixed, default: {} },
@@ -98,7 +108,18 @@ const clientSchema = new Schema<IClient>({
   
   // Status
   isActive: { type: Boolean, default: true }
-}, { timestamps: true });
+}, { 
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
+
+// Virtual for bound Tasks
+clientSchema.virtual('tasks', {
+  ref: 'Task',
+  localField: '_id',
+  foreignField: 'clientId'
+});
 
 clientSchema.index({ tenantId: 1, name: 1 });
 clientSchema.index({ tenantId: 1, fileNo: 1 });

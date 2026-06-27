@@ -9,9 +9,8 @@ import mongoose from 'mongoose';
 
 const createTaskSchema = z.object({
   clientId: z.string(),
-  serviceId: z.string().optional(),
-  assignedUserId: z.string().optional(),
-  title: z.string().min(1),
+  serviceId: z.string(),
+  assigneeIds: z.array(z.string()).min(1),
   description: z.string().optional(),
   priority: z.enum(['Low', 'Medium', 'High', 'Urgent']).optional(),
   period: z.object({
@@ -20,16 +19,27 @@ const createTaskSchema = z.object({
     label: z.string().optional()
   }).optional(),
   dueDate: z.string().optional(),
+  targetDate: z.string().optional(),
+  isBillable: z.boolean().optional(),
+  billableAmount: z.number().optional(),
+  tags: z.array(z.string()).optional(),
+  docCollectionRequest: z.boolean().optional(),
+  docCollectionMessage: z.string().optional(),
   customFieldValues: z.record(z.string(), z.any()).optional()
 });
 
 const updateTaskSchema = z.object({
-  title: z.string().min(1).optional(),
   description: z.string().optional(),
   status: z.enum(['Pending', 'In Progress', 'Under Review', 'On Hold', 'Completed', 'Cancelled'] as any).optional(),
   priority: z.enum(['Low', 'Medium', 'High', 'Urgent']).optional(),
-  assignedUserId: z.string().optional(),
+  assigneeIds: z.array(z.string()).min(1).optional(),
   dueDate: z.string().optional(),
+  targetDate: z.string().optional(),
+  isBillable: z.boolean().optional(),
+  billableAmount: z.number().optional(),
+  tags: z.array(z.string()).optional(),
+  docCollectionRequest: z.boolean().optional(),
+  docCollectionMessage: z.string().optional(),
   customFieldValues: z.record(z.string(), z.any()).optional()
 });
 
@@ -57,6 +67,11 @@ export const createTask = asyncHandler(async (req: Request, res: Response) => {
   sendSuccess(res, 201, 'Task created successfully', task);
 });
 
+export const getTags = asyncHandler(async (req: Request, res: Response) => {
+  const tags = await Task.distinct('tags', { tenantId: req.tenantId });
+  sendSuccess(res, 200, 'Tags fetched', tags);
+});
+
 export const getTasks = asyncHandler(async (req: Request, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
@@ -66,8 +81,28 @@ export const getTasks = asyncHandler(async (req: Request, res: Response) => {
   const query: any = { tenantId: req.tenantId };
   
   if (req.query.status) query.status = req.query.status;
-  if (req.query.clientId) query.clientId = req.query.clientId;
+  if (req.query.priority) query.priority = req.query.priority;
+  if (req.query.clientId) {
+    if (typeof req.query.clientId === 'string' && req.query.clientId.includes(',')) {
+      query.clientId = { $in: req.query.clientId.split(',') };
+    } else {
+      query.clientId = req.query.clientId;
+    }
+  }
   if (req.query.serviceId) query.serviceId = req.query.serviceId;
+  
+  if (req.query.dueStatus) {
+    const now = new Date();
+    if (req.query.dueStatus === 'overdue') {
+      query.dueDate = { $lt: now };
+      query.status = { $ne: 'Completed' };
+    } else if (req.query.dueStatus === 'today') {
+      const startOfDay = new Date(now.setHours(0, 0, 0, 0));
+      const endOfDay = new Date(now.setHours(23, 59, 59, 999));
+      query.dueDate = { $gte: startOfDay, $lte: endOfDay };
+      query.status = { $ne: 'Completed' };
+    }
+  }
   
   // Phase 36: Enforce ScopeFilter (e.g. assignedUserId = req.user._id)
   const scopeFilter = (req as any).scopeFilter;
@@ -75,12 +110,27 @@ export const getTasks = asyncHandler(async (req: Request, res: Response) => {
     Object.assign(query, scopeFilter);
   }
 
+  // Search filtering
+  if (req.query.search) {
+    const searchRegex = { $regex: req.query.search, $options: 'i' };
+    // Searching just description for now, as title is removed
+    // In the future, this could use an aggregate to search on populated serviceId.name
+    query.description = searchRegex;
+  }
+
+  // Sorting
+  let sortParams: any = { dueDate: 1, createdAt: -1 };
+  if (req.query.sortBy) {
+    const order = req.query.sortOrder === 'desc' ? -1 : 1;
+    sortParams = { [req.query.sortBy as string]: order };
+  }
+
   const [tasks, total] = await Promise.all([
     Task.find(query)
       .populate('clientId', 'name fileNo')
       .populate('serviceId', 'name')
-      .populate('assignedUserId', 'name photoUrl')
-      .sort({ dueDate: 1, createdAt: -1 })
+      .populate('assigneeIds', 'name photoUrl')
+      .sort(sortParams)
       .skip(skip)
       .limit(limit),
     Task.countDocuments(query)
@@ -98,15 +148,16 @@ export const getTasks = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const getTaskById = asyncHandler(async (req: Request, res: Response) => {
-  const scopeFilter = (req as any).scopeFilter || {};
-  const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter })
+  const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId })
     .populate('clientId', 'name fileNo')
     .populate('serviceId', 'name')
-    .populate('assignedUserId', 'name photoUrl')
+    .populate('assigneeIds', 'name photoUrl')
     .populate('checklist.completedBy', 'name photoUrl')
-    .populate('notes.createdBy', 'name photoUrl');
+    .populate('subtasks.assignedUserId', 'name photoUrl')
+    .populate('notes.createdBy', 'name photoUrl')
+    .populate('timeLogs.userId', 'name photoUrl');
 
-  if (!task) throw new ApiError(404, 'Task not found or access denied by scope');
+  if (!task) throw new ApiError(404, 'Task not found');
 
   sendSuccess(res, 200, 'Success', task);
 });
@@ -197,4 +248,33 @@ export const deleteTaskNote = asyncHandler(async (req: Request, res: Response) =
   await task.save();
 
   sendSuccess(res, 200, 'Note deleted');
+});
+
+export const updateTaskStatus = asyncHandler(async (req: Request, res: Response) => {
+  const { status } = z.object({ 
+    status: z.enum(['Pending', 'In Progress', 'Under Review', 'On Hold', 'Completed', 'Cancelled'] as any) 
+  }).parse(req.body);
+  const scopeFilter = (req as any).scopeFilter || {};
+  const updateData: any = { status };
+  
+  if (status === 'Completed') {
+    updateData.completedAt = new Date();
+  }
+
+  const task = await Task.findOneAndUpdate(
+    { _id: req.params.id, tenantId: req.tenantId, ...scopeFilter },
+    { $set: updateData },
+    { new: true }
+  );
+
+  if (!task) throw new ApiError(404, 'Task not found');
+  sendSuccess(res, 200, 'Task status updated', task);
+});
+
+export const deleteTask = asyncHandler(async (req: Request, res: Response) => {
+  const scopeFilter = (req as any).scopeFilter || {};
+  const task = await Task.findOneAndDelete({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter });
+  
+  if (!task) throw new ApiError(404, 'Task not found');
+  sendSuccess(res, 200, 'Task deleted successfully');
 });

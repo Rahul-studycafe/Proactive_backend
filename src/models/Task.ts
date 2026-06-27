@@ -6,9 +6,8 @@ export const TASK_STATUSES = ['Pending', 'In Progress', 'Under Review', 'On Hold
 export interface ITask extends Document {
   tenantId: mongoose.Types.ObjectId;
   clientId: mongoose.Types.ObjectId;
-  serviceId?: mongoose.Types.ObjectId;
-  assignedUserId?: mongoose.Types.ObjectId;
-  title: string;
+  serviceId: mongoose.Types.ObjectId;
+  assigneeIds: mongoose.Types.ObjectId[];
   description?: string;
   status: string;
   priority: string;
@@ -18,6 +17,7 @@ export interface ITask extends Document {
     label?: string;
   };
   dueDate?: Date;
+  targetDate?: Date;
   completedAt?: Date;
   creationType: string;
   checklist: {
@@ -41,6 +41,11 @@ export interface ITask extends Document {
   }[];
   isBilled: boolean;
   invoiceId?: mongoose.Types.ObjectId;
+  isBillable: boolean;
+  billableAmount?: number;
+  tags: string[];
+  docCollectionRequest: boolean;
+  docCollectionMessage?: string;
   billingAmount: number;
   timeLogged: number;
   timeLogs: {
@@ -58,11 +63,10 @@ const taskSchema = new Schema<ITask>({
   
   // References
   clientId: { type: Schema.Types.ObjectId, ref: 'Client', required: true },
-  serviceId: { type: Schema.Types.ObjectId, ref: 'Service' },
-  assignedUserId: { type: Schema.Types.ObjectId, ref: 'User' },
+  serviceId: { type: Schema.Types.ObjectId, ref: 'Service', required: true },
+  assigneeIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
   
   // Task Details
-  title: { type: String, required: true, trim: true },
   description: { type: String },
   status: { type: String, enum: TASK_STATUSES, default: 'Pending' },
   priority: { type: String, enum: ['Low', 'Medium', 'High', 'Urgent'], default: 'Medium' },
@@ -76,6 +80,7 @@ const taskSchema = new Schema<ITask>({
   
   // Dates
   dueDate: { type: Date },
+  targetDate: { type: Date },
   completedAt: { type: Date },
   
   // Creation context
@@ -111,6 +116,11 @@ const taskSchema = new Schema<ITask>({
   // Financial
   isBilled: { type: Boolean, default: false },
   invoiceId: { type: Schema.Types.ObjectId, ref: 'Invoice' },
+  isBillable: { type: Boolean, default: false },
+  billableAmount: { type: Number },
+  tags: [{ type: String }],
+  docCollectionRequest: { type: Boolean, default: false },
+  docCollectionMessage: { type: String },
   billingAmount: { type: Number, default: 0 },
   
   // Time Tracking

@@ -4,15 +4,20 @@ import {
   getClientById,
   createClient,
   updateClient,
-  deleteClient
+  deleteClient,
+  uploadClientPhoto
 } from '../modules/clients/controllers/client.controller';
 import { authenticate } from '../middlewares/authenticate';
 import { authorize } from '../middlewares/authorize';
+import { uploadClientMiddleware } from '../middlewares/upload';
 
 const router = Router();
 
 // Protect all client routes
 router.use(authenticate);
+
+// Upload photo (must be before /:id)
+router.post('/upload-photo', authorize('client', 'create'), uploadClientMiddleware.single('photo'), uploadClientPhoto);
 
 // List clients (requires view permission)
 router.get('/', authorize('client', 'view'), getClients);

@@ -15,7 +15,7 @@ const clientSchema = z.object({
   ]).optional(),
   email: z.string().email().optional().or(z.literal('')),
   mobile: z.string().optional(),
-  phone: z.string().optional(),
+  secondaryMobile: z.string().optional(),
   address: z.string().optional(),
   city: z.string().optional(),
   state: z.string().optional(),
@@ -25,6 +25,10 @@ const clientSchema = z.object({
   photoUrl: z.string().optional(),
   groupId: z.string().optional(),
   tags: z.array(z.string()).optional(),
+  billingProfileId: z.string().optional(),
+  contactPersonName: z.string().optional(),
+  dateOfBirth: z.string().datetime().optional().or(z.date().optional()),
+  openingBalance: z.number().optional(),
   assignedUsers: z.array(z.string()).optional(),
   customFieldValues: z.record(z.string(), z.any()).optional(),
   subscribedServices: z.array(z.object({
@@ -67,7 +71,6 @@ export const getClients = asyncHandler(async (req: Request, res: Response) => {
   const [clients, total] = await Promise.all([
     Client.find(query)
       .populate('groupId', 'name')
-      .populate('tags', 'name color')
       .populate('assignedUsers', 'name photoUrl')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -89,10 +92,17 @@ export const getClients = asyncHandler(async (req: Request, res: Response) => {
 export const getClientById = asyncHandler(async (req: Request, res: Response) => {
   const client = await Client.findOne({ _id: req.params.id, tenantId: req.tenantId })
     .populate('groupId', 'name')
-    .populate('tags', 'name color')
     .populate('assignedUsers', 'name photoUrl')
     .populate('subscribedServices.serviceId', 'name isRecurring frequency')
-    .populate('subscribedServices.customUsers', 'name photoUrl');
+    .populate('subscribedServices.customUsers', 'name photoUrl')
+    .populate({
+      path: 'tasks',
+      select: 'title serviceId status priority dueDate assigneeIds',
+      populate: {
+        path: 'serviceId',
+        select: 'name'
+      }
+    });
 
   if (!client) throw new ApiError(404, 'Client not found');
 
@@ -123,5 +133,16 @@ export const deleteClient = asyncHandler(async (req: Request, res: Response) => 
     { new: true }
   );
   if (!client) throw new ApiError(404, 'Client not found');
-  sendSuccess(res, 200, 'Client soft-deleted successfully', client);
+  sendSuccess(res, 200, 'Client deleted successfully');
+});
+
+export const uploadClientPhoto = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.file) {
+    throw new ApiError(400, 'No photo uploaded', 'FILE_REQUIRED');
+  }
+
+  // Generate URL for the uploaded file
+  const photoUrl = `/public/uploads/clients/${req.file.filename}`;
+
+  return sendSuccess(res, 200, 'Photo uploaded successfully', { photoUrl });
 });
