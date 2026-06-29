@@ -146,3 +146,97 @@ export const uploadClientPhoto = asyncHandler(async (req: Request, res: Response
 
   return sendSuccess(res, 200, 'Photo uploaded successfully', { photoUrl });
 });
+
+export const subscribeToPackage = asyncHandler(async (req: Request, res: Response) => {
+  const { packageId, customPrice } = z.object({
+    packageId: z.string(),
+    customPrice: z.number().optional()
+  }).parse(req.body);
+
+  const Package = require('mongoose').model('Package');
+  const pkg = await Package.findOne({ _id: packageId, tenantId: req.tenantId });
+  if (!pkg) {
+    throw new ApiError(404, 'Package not found');
+  }
+
+  const client = await Client.findOne({ _id: req.params.id, tenantId: req.tenantId });
+  if (!client) {
+    throw new ApiError(404, 'Client not found');
+  }
+
+  // Check if already subscribed to this package
+  const alreadySubscribed = client.subscribedPackages?.some(p => p.packageId.toString() === packageId);
+  if (alreadySubscribed) {
+    throw new ApiError(400, 'Client is already subscribed to this package');
+  }
+
+  // Add the package
+  if (!client.subscribedPackages) {
+    client.subscribedPackages = [];
+  }
+  client.subscribedPackages.push({
+    packageId: pkg._id,
+    customPrice: customPrice,
+    subscribedAt: new Date()
+  });
+
+  // Also push all services from the package into subscribedServices if not already there
+  if (!client.subscribedServices) {
+    client.subscribedServices = [];
+  }
+
+  const existingServiceIds = client.subscribedServices.map(s => s.serviceId.toString());
+  
+  for (const sId of pkg.serviceIds) {
+    if (!existingServiceIds.includes(sId.toString())) {
+      client.subscribedServices.push({
+        serviceId: sId,
+        customUsers: [],
+        subscribedAt: new Date()
+      });
+    }
+  }
+
+  await client.save();
+
+  return sendSuccess(res, 200, 'Subscribed to package successfully', client);
+});
+
+export const subscribeToService = asyncHandler(async (req: Request, res: Response) => {
+  const { serviceId, customPrice } = z.object({
+    serviceId: z.string(),
+    customPrice: z.number().optional()
+  }).parse(req.body);
+
+  const Service = require('mongoose').model('Service');
+  const svc = await Service.findOne({ _id: serviceId, tenantId: req.tenantId });
+  if (!svc) {
+    throw new ApiError(404, 'Service not found');
+  }
+
+  const client = await Client.findOne({ _id: req.params.id, tenantId: req.tenantId });
+  if (!client) {
+    throw new ApiError(404, 'Client not found');
+  }
+
+  // Check if already subscribed to this service
+  const alreadySubscribed = client.subscribedServices?.some(s => s.serviceId.toString() === serviceId);
+  if (alreadySubscribed) {
+    throw new ApiError(400, 'Client is already subscribed to this service');
+  }
+
+  if (!client.subscribedServices) {
+    client.subscribedServices = [];
+  }
+  
+  client.subscribedServices.push({
+    serviceId: svc._id,
+    customPrice: customPrice,
+    customUsers: [],
+    subscribedAt: new Date()
+  });
+
+  await client.save();
+
+  return sendSuccess(res, 200, 'Subscribed to service successfully', client);
+});

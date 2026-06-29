@@ -23,6 +23,12 @@ export interface IRole extends Document {
       manageClientPackages: IPermissionAction;
       viewClientPackages: IPermissionAction;
     };
+    package: {
+      create: IPermissionAction;
+      edit: IPermissionAction;
+      view: IPermissionAction;
+      delete: IPermissionAction;
+    };
     user: {
       create: IPermissionAction;
       edit: IPermissionAction;
@@ -111,6 +117,12 @@ const roleSchema = new Schema<IRole>({
       viewLedger: permissionActionSchema,
       manageClientPackages: permissionActionSchema,
       viewClientPackages: permissionActionSchema
+    },
+    package: {
+      create: permissionActionSchema,
+      edit: permissionActionSchema,
+      view: permissionActionSchema,
+      delete: permissionActionSchema
     },
     user: {
       create: permissionActionSchema,

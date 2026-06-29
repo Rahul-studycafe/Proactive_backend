@@ -16,6 +16,7 @@ import serviceRoutes from './routes/service.routes';
 import taskRoutes from './routes/task.routes';
 import invoiceRoutes from './routes/invoice.routes';
 import paymentRoutes from './routes/payment.routes';
+import packageRoutes from './routes/package.routes';
 
 const app: Express = express();
 
@@ -71,6 +72,7 @@ app.use('/api/v1/roles', roleRoutes);
 app.use('/api/v1/masters', masterRoutes);
 app.use('/api/v1/clients', clientRoutes);
 app.use('/api/v1/services', serviceRoutes);
+app.use('/api/v1/packages', packageRoutes);
 app.use('/api/v1/tasks', taskRoutes);
 app.use('/api/v1/invoices', invoiceRoutes);
 

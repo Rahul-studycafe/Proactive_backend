@@ -5,7 +5,9 @@ import {
   createClient,
   updateClient,
   deleteClient,
-  uploadClientPhoto
+  uploadClientPhoto,
+  subscribeToPackage,
+  subscribeToService
 } from '../modules/clients/controllers/client.controller';
 import { authenticate } from '../middlewares/authenticate';
 import { authorize } from '../middlewares/authorize';
@@ -30,6 +32,12 @@ router.post('/', authorize('client', 'create'), createClient);
 
 // Update client (requires edit permission)
 router.put('/:id', authorize('client', 'edit'), updateClient);
+
+// Subscribe to package (requires edit permission on client)
+router.post('/:id/packages', authorize('client', 'edit'), subscribeToPackage);
+
+// Subscribe to service (requires edit permission on client)
+router.post('/:id/services', authorize('client', 'edit'), subscribeToService);
 
 // Delete/Disable client (requires delete permission)
 router.delete('/:id', authorize('client', 'delete'), deleteClient);
