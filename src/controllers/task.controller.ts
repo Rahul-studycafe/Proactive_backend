@@ -4,6 +4,7 @@ import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../utils/ApiError';
 import { Task, TASK_STATUSES } from '../models/Task';
 import { Service } from '../modules/services/schemas';
+import { TaskHistory } from '../models/TaskHistory';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 
@@ -154,7 +155,6 @@ export const getTaskById = asyncHandler(async (req: Request, res: Response) => {
     .populate('assigneeIds', 'name photoUrl')
     .populate('checklist.completedBy', 'name photoUrl')
     .populate('subtasks.assignedUserId', 'name photoUrl')
-    .populate('notes.createdBy', 'name photoUrl')
     .populate('timeLogs.userId', 'name photoUrl');
 
   if (!task) throw new ApiError(404, 'Task not found');
@@ -214,6 +214,18 @@ export const toggleChecklistStep = asyncHandler(async (req: Request, res: Respon
   sendSuccess(res, 200, 'Checklist updated', task.checklist[idx]);
 });
 
+export const getTaskHistory = asyncHandler(async (req: Request, res: Response) => {
+  const scopeFilter = (req as any).scopeFilter || {};
+  const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter });
+  if (!task) throw new ApiError(404, 'Task not found');
+
+  const history = await TaskHistory.find({ taskId: req.params.id, tenantId: req.tenantId })
+    .populate('createdBy', 'name photoUrl')
+    .sort({ createdAt: -1 });
+
+  sendSuccess(res, 200, 'Task history fetched', history);
+});
+
 export const addTaskNote = asyncHandler(async (req: Request, res: Response) => {
   const { content } = req.body;
   if (!content) throw new ApiError(400, 'Note content is required');
@@ -222,20 +234,17 @@ export const addTaskNote = asyncHandler(async (req: Request, res: Response) => {
   const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter });
   if (!task) throw new ApiError(404, 'Task not found');
 
-  const note = {
-    content,
-    createdBy: (req as any).user._id,
-    createdAt: new Date()
-  };
+  const history = await TaskHistory.create({
+    tenantId: req.tenantId,
+    taskId: task._id,
+    action: 'Note Added',
+    details: content,
+    createdBy: (req as any).user._id
+  });
 
-  task.notes.push(note);
-  await task.save();
+  const populatedHistory = await TaskHistory.findById(history._id).populate('createdBy', 'name photoUrl');
 
-  // Populate createdBy manually to return complete object
-  const user = (req as any).user;
-  const savedNote = { ...note, _id: (task.notes[task.notes.length - 1] as any)._id, createdBy: { _id: user._id, name: user.name, photoUrl: user.photoUrl } };
-
-  sendSuccess(res, 201, 'Note added', savedNote);
+  sendSuccess(res, 201, 'Note added', populatedHistory);
 });
 
 export const deleteTaskNote = asyncHandler(async (req: Request, res: Response) => {
@@ -244,8 +253,11 @@ export const deleteTaskNote = asyncHandler(async (req: Request, res: Response) =
   const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter });
   if (!task) throw new ApiError(404, 'Task not found');
 
-  task.notes = task.notes.filter(n => (n as any)._id.toString() !== noteId);
-  await task.save();
+  await TaskHistory.findOneAndDelete({
+    _id: noteId,
+    taskId: req.params.id,
+    tenantId: req.tenantId
+  });
 
   sendSuccess(res, 200, 'Note deleted');
 });
@@ -264,11 +276,24 @@ export const updateTaskStatus = asyncHandler(async (req: Request, res: Response)
   const task = await Task.findOneAndUpdate(
     { _id: req.params.id, tenantId: req.tenantId, ...scopeFilter },
     { $set: updateData },
-    { new: true }
+    { new: false } // return old document to check status change
   );
 
   if (!task) throw new ApiError(404, 'Task not found');
-  sendSuccess(res, 200, 'Task status updated', task);
+
+  if (task.status !== status) {
+    await TaskHistory.create({
+      tenantId: req.tenantId,
+      taskId: task._id,
+      action: 'Status Changed',
+      details: `Status changed from ${task.status} to ${status}`,
+      createdBy: (req as any).user._id
+    });
+  }
+
+  const updatedTask = await Task.findById(task._id);
+
+  sendSuccess(res, 200, 'Task status updated', updatedTask);
 });
 
 export const deleteTask = asyncHandler(async (req: Request, res: Response) => {

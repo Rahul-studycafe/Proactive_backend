@@ -34,11 +34,7 @@ export interface ITask extends Document {
     status: string;
   }[];
   customFieldValues: Map<string, any>;
-  notes: {
-    content: string;
-    createdBy?: mongoose.Types.ObjectId;
-    createdAt: Date;
-  }[];
+
   isBilled: boolean;
   invoiceId?: mongoose.Types.ObjectId;
   isBillable: boolean;
@@ -106,12 +102,7 @@ const taskSchema = new Schema<ITask>({
   // Custom Field Values
   customFieldValues: { type: Map, of: Schema.Types.Mixed, default: {} },
   
-  // Notes / Activity Log
-  notes: [{
-    content: { type: String },
-    createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
-    createdAt: { type: Date, default: Date.now }
-  }],
+
   
   // Financial
   isBilled: { type: Boolean, default: false },

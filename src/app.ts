@@ -17,6 +17,7 @@ import taskRoutes from './routes/task.routes';
 import invoiceRoutes from './routes/invoice.routes';
 import paymentRoutes from './routes/payment.routes';
 import packageRoutes from './routes/package.routes';
+import documentRoutes from './routes/document.routes';
 
 const app: Express = express();
 
@@ -75,6 +76,7 @@ app.use('/api/v1/services', serviceRoutes);
 app.use('/api/v1/packages', packageRoutes);
 app.use('/api/v1/tasks', taskRoutes);
 app.use('/api/v1/invoices', invoiceRoutes);
+app.use('/api/v1/documents', documentRoutes);
 
 // ─── Fallback & Error Handling ───────────────────────────────────
 app.use((req: Request, res: Response, next: NextFunction) => {

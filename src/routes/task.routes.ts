@@ -8,10 +8,11 @@ import {
   updateTask,
   toggleChecklistStep,
   addTaskNote,
-  deleteTaskNote,
   updateTaskStatus,
   deleteTask,
-  getTags
+  getTags,
+  getTaskHistory,
+  deleteTaskNote
 } from '../controllers/task.controller';
 
 const router = Router();
@@ -43,7 +44,8 @@ router.delete('/:id', authorize('task', 'delete'), deleteTask);
 // Checklist actions
 router.patch('/:id/checklist/:stepIndex', authorize('task', 'edit'), toggleChecklistStep);
 
-// Notes actions
+// Notes and History actions
+router.get('/:id/history', authorize('task', 'view'), getTaskHistory);
 router.post('/:id/notes', authorize('task', 'edit'), addTaskNote);
 router.delete('/:id/notes/:noteId', authorize('task', 'deleteNote'), deleteTaskNote);
 
