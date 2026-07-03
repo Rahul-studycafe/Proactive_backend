@@ -11,7 +11,7 @@ import mongoose from 'mongoose';
 const createTaskSchema = z.object({
   clientId: z.string(),
   serviceId: z.string(),
-  assigneeIds: z.array(z.string()).min(1),
+  assigneeIds: z.array(z.string()).optional(),
   description: z.string().optional(),
   priority: z.enum(['Low', 'Medium', 'High', 'Urgent']).optional(),
   period: z.object({
@@ -48,19 +48,38 @@ export const createTask = asyncHandler(async (req: Request, res: Response) => {
   const data = createTaskSchema.parse(req.body);
   
   let checklist: any[] = [];
+  let assigneeIds = data.assigneeIds || [];
+
   if (data.serviceId) {
     const service = await Service.findOne({ _id: data.serviceId, tenantId: req.tenantId });
-    if (service && service.checklist) {
-      checklist = service.checklist.map((step: any) => ({
-        stepName: step.stepName,
-        isCompleted: false
-      }));
+    if (service) {
+      if (service.checklist) {
+        checklist = service.checklist.map((step: any) => ({
+          stepName: step.stepName,
+          isCompleted: false
+        }));
+      }
+
+      // Auto-assign logic
+      if (assigneeIds.length === 0) {
+        if (service.assignmentMode === 'specific_users' && service.assignedUsers && service.assignedUsers.length > 0) {
+          assigneeIds = service.assignedUsers.map(id => id.toString());
+        } else if (service.assignmentMode === 'client_default_user') {
+          // Requires importing Client model, which I'll add at the top
+          const { Client } = require('../modules/clients/schemas/client.schema');
+          const client = await Client.findOne({ _id: data.clientId, tenantId: req.tenantId });
+          if (client && client.assignedUsers && client.assignedUsers.length > 0) {
+            assigneeIds = client.assignedUsers.map((id: any) => id.toString());
+          }
+        }
+      }
     }
   }
 
   const task = await Task.create({
     tenantId: req.tenantId,
     ...data,
+    assigneeIds,
     creationType: 'manual',
     checklist
   });
