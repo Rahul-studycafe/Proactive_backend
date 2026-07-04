@@ -8,11 +8,13 @@ export interface IService extends Document {
   isRecurring: boolean;
   frequency?: {
     type: string;
-    creationDay: number;
-    dueDay: number;
-    periodLogic: string;
+    creationDay?: number;
+    dueDay?: number;
+    creationMonthOffset?: string;
+    dueMonthOffset?: string;
+    creationDate?: string;
+    dueDate?: string;
   };
-  assignmentMode: string;
   assignedUsers: mongoose.Types.ObjectId[];
   sacCode?: string;
   gstPercentage: number;
@@ -22,11 +24,13 @@ export interface IService extends Document {
     stepName: string;
     orderIndex: number;
   }[];
+  isWorkflowEnabled: boolean;
   subtasks: {
     title: string;
     description?: string;
     relativeDueDays?: number;
-    assignedUserId?: mongoose.Types.ObjectId;
+    relativeTargetDays?: number;
+    assignedUserIds?: mongoose.Types.ObjectId[];
   }[];
   customFieldsDef: {
     label: string;
@@ -58,21 +62,15 @@ const serviceSchema = new Schema<IService>({
   isRecurring: { type: Boolean, default: false },
   frequency: {
     type: { type: String, enum: ['monthly', 'quarterly', 'half_yearly', 'yearly', 'one_time'] },
-    creationDay: { type: Number, min: 1, max: 28 },
-    dueDay: { type: Number, min: 1, max: 28 },
-    periodLogic: {
-      type: String,
-      enum: ['recently_completed', 'currently_running'],
-      default: 'recently_completed'
-    }
+    creationDay: { type: Number, min: 1, max: 31 },
+    dueDay: { type: Number, min: 1, max: 31 },
+    creationMonthOffset: { type: String },
+    dueMonthOffset: { type: String },
+    creationDate: { type: String },
+    dueDate: { type: String }
   },
   
   // Assignment Logic
-  assignmentMode: {
-    type: String,
-    enum: ['client_default_user', 'specific_users'],
-    default: 'client_default_user'
-  },
   assignedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
   
   // Billing Settings
@@ -87,12 +85,16 @@ const serviceSchema = new Schema<IService>({
     orderIndex: { type: Number, required: true }
   }],
   
+  // Workflow config
+  isWorkflowEnabled: { type: Boolean, default: false },
+
   // Subtasks
   subtasks: [{
     title: { type: String },
     description: { type: String },
     relativeDueDays: { type: Number },
-    assignedUserId: { type: Schema.Types.ObjectId, ref: 'User' }
+    relativeTargetDays: { type: Number },
+    assignedUserIds: [{ type: Schema.Types.ObjectId, ref: 'User' }]
   }],
   
   // Custom Field Definitions
