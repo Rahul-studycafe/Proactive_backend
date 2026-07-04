@@ -62,10 +62,10 @@ export const createTask = asyncHandler(async (req: Request, res: Response) => {
 
       // Auto-assign logic
       if (assigneeIds.length === 0) {
-        if (service.assignmentMode === 'specific_users' && service.assignedUsers && service.assignedUsers.length > 0) {
+        if (service.assignedUsers && service.assignedUsers.length > 0) {
           assigneeIds = service.assignedUsers.map(id => id.toString());
-        } else if (service.assignmentMode === 'client_default_user') {
-          // Requires importing Client model, which I'll add at the top
+        } else {
+          // Fallback to client default users if no specific users set for the service
           const { Client } = require('../modules/clients/schemas/client.schema');
           const client = await Client.findOne({ _id: data.clientId, tenantId: req.tenantId });
           if (client && client.assignedUsers && client.assignedUsers.length > 0) {
