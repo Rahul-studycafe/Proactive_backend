@@ -29,6 +29,7 @@ const serviceSchema = z.object({
   })).optional(),
   isWorkflowEnabled: z.boolean().optional(),
   subtasks: z.array(z.object({
+    _id: z.string().optional(),
     title: z.string().min(1),
     description: z.string().optional(),
     relativeDueDays: z.number().optional(),
@@ -36,6 +37,7 @@ const serviceSchema = z.object({
     assignedUserIds: z.array(z.string()).optional()
   })).optional(),
   customFieldsDef: z.array(z.object({
+    _id: z.string().optional(),
     label: z.string().min(1),
     fieldType: z.enum(['text', 'number', 'select', 'date']),
     options: z.array(z.string()).optional(),

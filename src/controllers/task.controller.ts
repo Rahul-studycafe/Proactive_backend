@@ -48,6 +48,7 @@ export const createTask = asyncHandler(async (req: Request, res: Response) => {
   const data = createTaskSchema.parse(req.body);
   
   let checklist: any[] = [];
+  let calculatedSubtasks: any[] = [];
   let assigneeIds = data.assigneeIds || [];
 
   if (data.serviceId) {
@@ -58,6 +59,51 @@ export const createTask = asyncHandler(async (req: Request, res: Response) => {
           stepName: step.stepName,
           isCompleted: false
         }));
+      }
+
+      // Calculate Subtasks based on Service blueprint
+      const now = new Date();
+      if (service.subtasks) {
+        calculatedSubtasks = service.subtasks.map((st: any) => {
+          let stDueDate = undefined;
+          let stTargetDate = undefined;
+
+          if (st.relativeDueDays !== undefined && st.relativeDueDays !== null) {
+            const d = new Date(now);
+            d.setDate(d.getDate() + st.relativeDueDays);
+            stDueDate = d;
+          }
+
+          if (st.relativeTargetDays !== undefined && st.relativeTargetDays !== null) {
+            const d = new Date(now);
+            d.setDate(d.getDate() + st.relativeTargetDays);
+            stTargetDate = d;
+          }
+
+          return {
+            title: st.title,
+            description: st.description,
+            assignedUserId: st.assignedUserIds && st.assignedUserIds.length > 0 ? st.assignedUserIds[0] : undefined,
+            dueDate: stDueDate,
+            targetDate: stTargetDate,
+            status: 'Pending'
+          };
+        });
+      }
+
+      // Setup Custom Fields
+      const customFieldValues = new Map();
+      if (service.customFieldsDef) {
+        service.customFieldsDef.forEach((cf: any) => {
+          customFieldValues.set(cf.label, "");
+        });
+      }
+      (data as any).customFieldValues = customFieldValues as any;
+
+      // Document Collection
+      if (service.autoDocCollection?.isEnabled && !data.docCollectionRequest) {
+        data.docCollectionRequest = true;
+        data.docCollectionMessage = service.autoDocCollection.defaultMessage || "Please provide the required documents.";
       }
 
       // Auto-assign logic
@@ -81,7 +127,9 @@ export const createTask = asyncHandler(async (req: Request, res: Response) => {
     ...data,
     assigneeIds,
     creationType: 'manual',
-    checklist
+    checklist,
+    subtasks: calculatedSubtasks,
+    customFieldValues: (data as any).customFieldValues || {}
   });
 
   sendSuccess(res, 201, 'Task created successfully', task);
