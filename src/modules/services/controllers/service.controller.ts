@@ -11,11 +11,13 @@ const serviceSchema = z.object({
   isRecurring: z.boolean().optional(),
   frequency: z.object({
     type: z.enum(['monthly', 'quarterly', 'half_yearly', 'yearly', 'one_time']),
-    creationDay: z.number().min(1).max(28),
-    dueDay: z.number().min(1).max(28),
-    periodLogic: z.enum(['recently_completed', 'currently_running']).optional()
+    creationDay: z.number().min(1).max(31).optional(),
+    dueDay: z.number().min(1).max(31).optional(),
+    creationMonthOffset: z.string().optional(),
+    dueMonthOffset: z.string().optional(),
+    creationDate: z.string().optional(),
+    dueDate: z.string().optional()
   }).optional(),
-  assignmentMode: z.enum(['client_default_user', 'specific_users']).optional(),
   assignedUsers: z.array(z.string()).optional(),
   sacCode: z.string().optional(),
   gstPercentage: z.number().optional(),
@@ -25,11 +27,13 @@ const serviceSchema = z.object({
     stepName: z.string().min(1),
     orderIndex: z.number()
   })).optional(),
+  isWorkflowEnabled: z.boolean().optional(),
   subtasks: z.array(z.object({
     title: z.string().min(1),
     description: z.string().optional(),
     relativeDueDays: z.number().optional(),
-    assignedUserId: z.string().optional()
+    relativeTargetDays: z.number().optional(),
+    assignedUserIds: z.array(z.string()).optional()
   })).optional(),
   customFieldsDef: z.array(z.object({
     label: z.string().min(1),
