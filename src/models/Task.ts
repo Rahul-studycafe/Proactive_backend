@@ -100,7 +100,7 @@ const taskSchema = new Schema<ITask>({
   }],
   
   // Custom Field Values
-  customFieldValues: { type: Map, of: Schema.Types.Mixed, default: {} },
+  customFieldValues: { type: Schema.Types.Mixed, default: {} },
   
 
   

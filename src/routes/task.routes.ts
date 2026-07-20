@@ -12,7 +12,12 @@ import {
   deleteTask,
   getTags,
   getTaskHistory,
-  deleteTaskNote
+  deleteTaskNote,
+  addTaskChecklistStep,
+  deleteTaskChecklistStep,
+  addSubtask,
+  updateSubtask,
+  deleteSubtask
 } from '../controllers/task.controller';
 
 const router = Router();
@@ -43,6 +48,13 @@ router.delete('/:id', authorize('task', 'delete'), deleteTask);
 
 // Checklist actions
 router.patch('/:id/checklist/:stepIndex', authorize('task', 'edit'), toggleChecklistStep);
+router.post('/:id/checklist', authorize('task', 'edit'), addTaskChecklistStep);
+router.delete('/:id/checklist/:stepIndex', authorize('task', 'edit'), deleteTaskChecklistStep);
+
+// Subtask actions
+router.post('/:id/subtasks', authorize('task', 'edit'), addSubtask);
+router.put('/:id/subtasks/:subtaskId', authorize('task', 'edit'), updateSubtask);
+router.delete('/:id/subtasks/:subtaskId', authorize('task', 'edit'), deleteSubtask);
 
 // Notes and History actions
 router.get('/:id/history', authorize('task', 'view'), getTaskHistory);

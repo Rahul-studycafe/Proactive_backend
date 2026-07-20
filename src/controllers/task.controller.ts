@@ -92,13 +92,13 @@ export const createTask = asyncHandler(async (req: Request, res: Response) => {
       }
 
       // Setup Custom Fields
-      const customFieldValues = new Map();
+      const customFieldValues: Record<string, any> = {};
       if (service.customFieldsDef) {
         service.customFieldsDef.forEach((cf: any) => {
-          customFieldValues.set(cf.label, "");
+          customFieldValues[cf.label] = "";
         });
       }
-      (data as any).customFieldValues = customFieldValues as any;
+      (data as any).customFieldValues = customFieldValues;
 
       // Document Collection
       if (service.autoDocCollection?.isEnabled && !data.docCollectionRequest) {
@@ -195,7 +195,7 @@ export const getTasks = asyncHandler(async (req: Request, res: Response) => {
 
   const [tasks, total] = await Promise.all([
     Task.find(query)
-      .populate('clientId', 'name fileNo')
+      .populate('clientId', 'name fileNo pan')
       .populate('serviceId', 'name')
       .populate('assigneeIds', 'name photoUrl')
       .sort(sortParams)
@@ -217,8 +217,8 @@ export const getTasks = asyncHandler(async (req: Request, res: Response) => {
 
 export const getTaskById = asyncHandler(async (req: Request, res: Response) => {
   const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId })
-    .populate('clientId', 'name fileNo')
-    .populate('serviceId', 'name')
+    .populate('clientId', 'name fileNo pan')
+    .populate('serviceId', 'name customFieldsDef')
     .populate('assigneeIds', 'name photoUrl')
     .populate('checklist.completedBy', 'name photoUrl')
     .populate('subtasks.assignedUserId', 'name photoUrl')
@@ -238,9 +238,11 @@ export const updateTask = asyncHandler(async (req: Request, res: Response) => {
 
   // Phase 37: Validate Status Transition
   if (data.status === 'Completed' && task.status !== 'Completed') {
-    const incompleteStep = task.checklist.find(c => !c.isCompleted);
-    if (incompleteStep) {
-      throw new ApiError(400, 'Cannot complete task. Checklist is incomplete.');
+    const incompleteChecklist = task.checklist.some(c => !c.isCompleted);
+    const incompleteSubtask = task.subtasks.some(s => s.status !== 'Completed' && s.status !== 'Cancelled');
+    
+    if (incompleteChecklist || incompleteSubtask) {
+      throw new ApiError(400, 'Cannot complete task. All to-dos and subtasks must be resolved first.');
     }
     task.completedAt = new Date();
   } else if (data.status && data.status !== 'Completed') {
@@ -279,6 +281,102 @@ export const toggleChecklistStep = asyncHandler(async (req: Request, res: Respon
   await task.save();
 
   sendSuccess(res, 200, 'Checklist updated', task.checklist[idx]);
+});
+
+export const addTaskChecklistStep = asyncHandler(async (req: Request, res: Response) => {
+  const { stepName } = req.body;
+  if (!stepName) throw new ApiError(400, 'Step name is required');
+
+  const scopeFilter = (req as any).scopeFilter || {};
+  const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter });
+  if (!task) throw new ApiError(404, 'Task not found');
+
+  task.checklist.push({
+    stepName,
+    isCompleted: false
+  });
+  
+  await task.save();
+
+  sendSuccess(res, 201, 'Checklist step added', task.checklist[task.checklist.length - 1]);
+});
+
+export const deleteTaskChecklistStep = asyncHandler(async (req: Request, res: Response) => {
+  const { stepIndex } = req.params;
+  const scopeFilter = (req as any).scopeFilter || {};
+
+  const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter });
+  if (!task) throw new ApiError(404, 'Task not found');
+
+  const idx = parseInt(stepIndex as string, 10);
+  if (isNaN(idx) || idx < 0 || idx >= task.checklist.length) {
+    throw new ApiError(400, 'Invalid checklist index');
+  }
+
+  task.checklist.splice(idx, 1);
+  await task.save();
+
+  sendSuccess(res, 200, 'Checklist step deleted');
+});
+
+export const addSubtask = asyncHandler(async (req: Request, res: Response) => {
+  const { title, description, assignedUserId, dueDate } = req.body;
+  if (!title) throw new ApiError(400, 'Subtask title is required');
+
+  const scopeFilter = (req as any).scopeFilter || {};
+  const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter });
+  if (!task) throw new ApiError(404, 'Task not found');
+
+  task.subtasks.push({
+    title,
+    description,
+    assignedUserId,
+    dueDate,
+    status: 'Pending'
+  });
+  
+  await task.save();
+
+  // Populate assignee for the newly added subtask if possible, or we can let frontend refetch
+  sendSuccess(res, 201, 'Subtask added', task.subtasks[task.subtasks.length - 1]);
+});
+
+export const updateSubtask = asyncHandler(async (req: Request, res: Response) => {
+  const { subtaskId } = req.params;
+  const { status, title, description, assignedUserId, dueDate } = req.body;
+  const scopeFilter = (req as any).scopeFilter || {};
+
+  const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter });
+  if (!task) throw new ApiError(404, 'Task not found');
+
+  const subtask = task.subtasks.id(subtaskId);
+  if (!subtask) throw new ApiError(404, 'Subtask not found');
+
+  if (status !== undefined) subtask.status = status;
+  if (title !== undefined) subtask.title = title;
+  if (description !== undefined) subtask.description = description;
+  if (assignedUserId !== undefined) subtask.assignedUserId = assignedUserId;
+  if (dueDate !== undefined) subtask.dueDate = dueDate;
+
+  await task.save();
+
+  sendSuccess(res, 200, 'Subtask updated', subtask);
+});
+
+export const deleteSubtask = asyncHandler(async (req: Request, res: Response) => {
+  const { subtaskId } = req.params;
+  const scopeFilter = (req as any).scopeFilter || {};
+
+  const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter });
+  if (!task) throw new ApiError(404, 'Task not found');
+
+  const subtask = task.subtasks.id(subtaskId);
+  if (!subtask) throw new ApiError(404, 'Subtask not found');
+
+  task.subtasks.pull(subtaskId);
+  await task.save();
+
+  sendSuccess(res, 200, 'Subtask deleted');
 });
 
 export const getTaskHistory = asyncHandler(async (req: Request, res: Response) => {
@@ -336,14 +434,25 @@ export const updateTaskStatus = asyncHandler(async (req: Request, res: Response)
   const scopeFilter = (req as any).scopeFilter || {};
   const updateData: any = { status };
   
-  if (status === 'Completed') {
+  const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter });
+  if (!task) throw new ApiError(404, 'Task not found');
+
+  if (status === 'Completed' && task.status !== 'Completed') {
+    const incompleteChecklist = task.checklist.some(c => !c.isCompleted);
+    const incompleteSubtask = task.subtasks.some(s => s.status !== 'Completed' && s.status !== 'Cancelled');
+    
+    if (incompleteChecklist || incompleteSubtask) {
+      throw new ApiError(400, 'Cannot complete task. All to-dos and subtasks must be resolved first.');
+    }
     updateData.completedAt = new Date();
+  } else if (status !== 'Completed') {
+    updateData.completedAt = null; // Or use $unset if preferred
   }
 
-  const task = await Task.findOneAndUpdate(
-    { _id: req.params.id, tenantId: req.tenantId, ...scopeFilter },
+  const updatedDoc = await Task.findOneAndUpdate(
+    { _id: task._id },
     { $set: updateData },
-    { new: false } // return old document to check status change
+    { new: true } // return new document
   );
 
   if (!task) throw new ApiError(404, 'Task not found');
@@ -358,9 +467,7 @@ export const updateTaskStatus = asyncHandler(async (req: Request, res: Response)
     });
   }
 
-  const updatedTask = await Task.findById(task._id);
-
-  sendSuccess(res, 200, 'Task status updated', updatedTask);
+  sendSuccess(res, 200, 'Task status updated', updatedDoc);
 });
 
 export const deleteTask = asyncHandler(async (req: Request, res: Response) => {

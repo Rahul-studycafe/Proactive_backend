@@ -97,7 +97,7 @@ export const getClientById = asyncHandler(async (req: Request, res: Response) =>
     .populate('subscribedServices.customUsers', 'name photoUrl')
     .populate({
       path: 'tasks',
-      select: 'title serviceId status priority dueDate assigneeIds',
+      select: 'serviceId status priority dueDate assigneeIds',
       populate: {
         path: 'serviceId',
         select: 'name'

@@ -3,7 +3,7 @@ import { tenantPlugin } from '../common/plugins/tenant.plugin';
 
 export interface IDocument extends MongooseDocument {
   tenantId: mongoose.Types.ObjectId;
-  taskId: mongoose.Types.ObjectId;
+  taskId?: mongoose.Types.ObjectId;
   clientId: mongoose.Types.ObjectId;
   category: 'document' | 'supporting_file';
   fileName: string;
@@ -15,7 +15,7 @@ export interface IDocument extends MongooseDocument {
 
 const documentSchema = new Schema<IDocument>({
   tenantId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
-  taskId: { type: Schema.Types.ObjectId, ref: 'Task', required: true, index: true },
+  taskId: { type: Schema.Types.ObjectId, ref: 'Task', index: true },
   clientId: { type: Schema.Types.ObjectId, ref: 'Client', required: true, index: true },
   category: { type: String, enum: ['document', 'supporting_file'], required: true },
   fileName: { type: String, required: true },

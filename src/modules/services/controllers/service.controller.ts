@@ -3,6 +3,7 @@ import { asyncHandler } from '../../../utils/async-handler';
 import { sendSuccess } from '../../../common/responses/api-response';
 import { ApiError } from '../../../common/errors/api-error';
 import { Service } from '../schemas';
+import { Client } from '../../clients/schemas/client.schema';
 import { z } from 'zod';
 
 const serviceSchema = z.object({
@@ -61,8 +62,23 @@ export const getServices = asyncHandler(async (req: Request, res: Response) => {
     query.isEnabled = isEnabled === 'true';
   }
 
-  const services = await Service.find(query).sort({ name: 1 }).populate('assignedUsers', 'name photoUrl');
-  sendSuccess(res, 200, 'Success', services);
+  const services = await Service.find(query).sort({ name: 1 }).populate('assignedUsers', 'name photoUrl').lean();
+
+  const clientCounts = await Client.aggregate([
+    { $match: { tenantId: req.tenantId, isActive: true } },
+    { $unwind: '$subscribedServices' },
+    { $group: { _id: '$subscribedServices.serviceId', count: { $sum: 1 } } }
+  ]);
+
+  const countMap = new Map();
+  clientCounts.forEach(c => countMap.set(c._id.toString(), c.count));
+
+  const result = services.map(s => ({
+    ...s,
+    clientsCount: countMap.get(s._id.toString()) || 0
+  }));
+
+  sendSuccess(res, 200, 'Success', result);
 });
 
 export const getServiceById = asyncHandler(async (req: Request, res: Response) => {

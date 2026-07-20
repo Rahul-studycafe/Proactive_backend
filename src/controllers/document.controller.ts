@@ -4,13 +4,12 @@ import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../utils/ApiError';
 import { DocumentModel } from '../models/Document';
 import { Task } from '../models/Task';
+import { TaskHistory } from '../models/TaskHistory';
 import { z } from 'zod';
 
 const uploadDocumentSchema = z.object({
-  taskId: z.string(),
   category: z.enum(['document', 'supporting_file']),
-  fileName: z.string(),
-  fileUrl: z.string() // For now, we simulate uploads by just receiving the URL
+  clientId: z.string().optional()
 });
 
 export const getTaskDocuments = asyncHandler(async (req: Request, res: Response) => {
@@ -31,17 +30,76 @@ export const getTaskDocuments = asyncHandler(async (req: Request, res: Response)
 
 export const uploadDocument = asyncHandler(async (req: Request, res: Response) => {
   const data = uploadDocumentSchema.parse(req.body);
+  const taskId = req.params.taskId;
+  
+  if (!req.file) {
+    throw new ApiError(400, 'No file uploaded');
+  }
 
-  const task = await Task.findOne({ _id: data.taskId, tenantId: req.tenantId });
+  const task = await Task.findOne({ _id: taskId, tenantId: req.tenantId });
   if (!task) throw new ApiError(404, 'Task not found');
+
+  // Construct public URL from the local file path (assuming /public is mapped to /public)
+  // For example: /public/uploads/clients/6a4b.../tasks/6a4b.../document/filename-1234.pdf
+  // We need to strip the absolute path up to 'public'
+  const fileUrl = `${process.env.BACKEND_URL || 'http://localhost:5000'}/public/uploads/clients/${data.clientId || 'unknown-client'}/tasks/${taskId}/${data.category}/${req.file.filename}`;
 
   const document = await DocumentModel.create({
     tenantId: req.tenantId,
     taskId: task._id,
     clientId: task.clientId,
     category: data.category,
-    fileName: data.fileName,
-    fileUrl: data.fileUrl,
+    fileName: req.file.originalname,
+    fileUrl: fileUrl,
+    uploadedBy: (req as any).user._id
+  });
+
+  const populatedDoc = await DocumentModel.findById(document._id).populate('uploadedBy', 'name photoUrl');
+
+  // Log in task history
+  await TaskHistory.create({
+    tenantId: req.tenantId,
+    taskId: task._id,
+    action: `Uploaded ${data.category === 'document' ? 'Document' : 'Supporting File'}`,
+    details: `Uploaded file: ${req.file.originalname}`,
+    createdBy: (req as any).user._id
+  });
+
+  sendSuccess(res, 201, 'Document uploaded successfully', populatedDoc);
+});
+
+export const getClientDocuments = asyncHandler(async (req: Request, res: Response) => {
+  const { clientId } = req.params;
+  const { category } = req.query;
+
+  const query: any = { clientId, tenantId: req.tenantId, taskId: { $exists: false } };
+  if (category) {
+    query.category = category;
+  }
+
+  const documents = await DocumentModel.find(query)
+    .populate('uploadedBy', 'name photoUrl')
+    .sort({ createdAt: -1 });
+
+  sendSuccess(res, 200, 'Documents fetched successfully', documents);
+});
+
+export const uploadClientDocument = asyncHandler(async (req: Request, res: Response) => {
+  const data = uploadDocumentSchema.parse(req.body);
+  const clientId = req.params.clientId;
+  
+  if (!req.file) {
+    throw new ApiError(400, 'No file uploaded');
+  }
+
+  const fileUrl = `${process.env.BACKEND_URL || 'http://localhost:5000'}/public/uploads/clients/${clientId}/documents/${data.category}/${req.file.filename}`;
+
+  const document = await DocumentModel.create({
+    tenantId: req.tenantId,
+    clientId: clientId,
+    category: data.category,
+    fileName: req.file.originalname,
+    fileUrl: fileUrl,
     uploadedBy: (req as any).user._id
   });
 
@@ -49,6 +107,9 @@ export const uploadDocument = asyncHandler(async (req: Request, res: Response) =
 
   sendSuccess(res, 201, 'Document uploaded successfully', populatedDoc);
 });
+
+import fs from 'fs';
+import path from 'path';
 
 export const deleteDocument = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
@@ -59,6 +120,39 @@ export const deleteDocument = asyncHandler(async (req: Request, res: Response) =
   });
 
   if (!document) throw new ApiError(404, 'Document not found');
+  
+  // Try to delete the physical file from the server
+  try {
+    if (document.fileUrl) {
+      // fileUrl looks like: http://localhost:5000/public/uploads/clients/...
+      // Extract the path after the domain
+      const urlObj = new URL(document.fileUrl);
+      const urlPath = urlObj.pathname; // e.g. /public/uploads/clients/...
+      
+      // Map it to the local file system
+      // urlPath starts with '/public', so we can strip the first '/' and join with cwd
+      if (urlPath.startsWith('/public/uploads')) {
+        const localFilePath = path.join(process.cwd(), urlPath.replace(/^\//, ''));
+        if (fs.existsSync(localFilePath)) {
+          fs.unlinkSync(localFilePath);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Failed to delete physical file:', error);
+    // Continue anyway since the DB record is deleted
+  }
+
+  // Log in task history only if it belongs to a task
+  if (document.taskId) {
+    await TaskHistory.create({
+      tenantId: req.tenantId,
+      taskId: document.taskId,
+      action: `Deleted ${document.category === 'document' ? 'Document' : 'Supporting File'}`,
+      details: `Deleted file: ${document.fileName}`,
+      createdBy: (req as any).user._id
+    });
+  }
 
   sendSuccess(res, 200, 'Document deleted successfully');
 });
