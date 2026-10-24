@@ -14,6 +14,7 @@ declare global {
         name: string;
         username: string;
         roleId: mongoose.Types.ObjectId;
+        departmentId?: mongoose.Types.ObjectId;
         tokenVersion: number;
       };
       /** The tenantId extracted from the JWT — NEVER from the client */

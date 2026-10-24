@@ -349,7 +349,7 @@ export const updateSubtask = asyncHandler(async (req: Request, res: Response) =>
   const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter });
   if (!task) throw new ApiError(404, 'Task not found');
 
-  const subtask = task.subtasks.id(subtaskId);
+  const subtask = (task.subtasks as any).id(subtaskId);
   if (!subtask) throw new ApiError(404, 'Subtask not found');
 
   if (status !== undefined) subtask.status = status;
@@ -370,10 +370,10 @@ export const deleteSubtask = asyncHandler(async (req: Request, res: Response) =>
   const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter });
   if (!task) throw new ApiError(404, 'Task not found');
 
-  const subtask = task.subtasks.id(subtaskId);
+  const subtask = (task.subtasks as any).id(subtaskId);
   if (!subtask) throw new ApiError(404, 'Subtask not found');
 
-  task.subtasks.pull(subtaskId);
+  (task.subtasks as any).pull(subtaskId);
   await task.save();
 
   sendSuccess(res, 200, 'Subtask deleted');

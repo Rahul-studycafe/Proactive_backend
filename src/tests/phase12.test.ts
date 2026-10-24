@@ -17,11 +17,12 @@ describe('Phase 12: Token Refresh & Logout Endpoints', () => {
   const testPassword = 'securePassword123';
   const orgSlug = 'phase12-org';
   const username = 'phase12_tester';
+  const testEmail = 'phase12@test.com';
 
   beforeAll(async () => {
     await connectDB();
     await Organization.deleteOne({ slug: orgSlug });
-    await User.deleteMany({ username }).setOptions({ skipTenantPlugin: true });
+    await User.deleteMany({ email: testEmail }).setOptions({ skipTenantPlugin: true });
 
     const org = new Organization({ name: 'Phase 12 Org', slug: orgSlug, plan: { maxUsers: 5 } });
     const savedOrg = await org.save();
@@ -30,17 +31,17 @@ describe('Phase 12: Token Refresh & Logout Endpoints', () => {
     const role = new Role({ tenantId: orgId, name: 'Admin', isSuperAdmin: true, permissions: {} });
     const savedRole = await role.save();
 
-    const user = new User({ tenantId: orgId, name: 'Phase 12 Tester', username, password: testPassword, roleId: savedRole._id, tokenVersion: 1 });
+    const user = new User({ tenantId: orgId, name: 'Phase 12 Tester', username, email: testEmail, password: testPassword, roleId: savedRole._id, tokenVersion: 1 });
     await user.save();
 
-    const res = await request(app).post('/api/v1/auth/login').send({ orgSlug, username, password: testPassword });
+    const res = await request(app).post('/api/v1/auth/login').send({ email: testEmail, password: testPassword });
     accessToken = res.body.data.accessToken;
     refreshToken = res.body.data.refreshToken;
   });
 
   afterAll(async () => {
     await Organization.deleteOne({ slug: orgSlug });
-    await User.deleteMany({ username }).setOptions({ skipTenantPlugin: true });
+    await User.deleteMany({ email: testEmail }).setOptions({ skipTenantPlugin: true });
     await Role.deleteMany({ tenantId: orgId }).setOptions({ skipTenantPlugin: true });
     await mongoose.connection.close();
   });

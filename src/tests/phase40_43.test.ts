@@ -147,6 +147,114 @@ describe('Phase 40-43: Financials - Billing & Invoicing', () => {
       expect(t2?.isBilled).toBe(false);
     });
   });
+  describe('Phase 43: Get Single Invoice', () => {
+    it('should fetch a single invoice by ID', async () => {
+      // First create a fresh invoice to test GET
+      const createRes = await request(app)
+        .post('/api/v1/invoices')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          clientId,
+          date: new Date().toISOString(),
+          status: 'Draft',
+          items: [
+            {
+              referenceType: 'Task',
+              referenceId: taskId1,
+              particulars: 'Draft Task 1',
+              quantity: 1,
+              rate: 1000,
+              gstPercentage: 18
+            }
+          ]
+        });
+
+      expect(createRes.status).toBe(201);
+      invoiceId = createRes.body.data._id;
+
+      const res = await request(app)
+        .get(`/api/v1/invoices/${invoiceId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data._id).toBe(invoiceId);
+      expect(res.body.data.clientId).toBeDefined();
+      // Should be populated
+      expect(res.body.data.clientId.name).toBe('Billing Client');
+    });
+
+    it('should return 404 for non-existent invoice', async () => {
+      const fakeId = new mongoose.Types.ObjectId();
+      const res = await request(app)
+        .get(`/api/v1/invoices/${fakeId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe('Phase 43: Update Draft Invoice', () => {
+    it('should update items and recalculate totals on a Draft invoice', async () => {
+      const res = await request(app)
+        .put(`/api/v1/invoices/${invoiceId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          items: [
+            {
+              referenceType: 'Task',
+              referenceId: taskId2,
+              particulars: 'Switched to Task 2',
+              quantity: 1,
+              rate: 2000,
+              gstPercentage: 18
+            },
+            {
+              referenceType: 'Manual',
+              particulars: 'Extra Fee',
+              quantity: 3,
+              rate: 500,
+              gstPercentage: 18
+            }
+          ],
+          notes: 'Updated draft'
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.totals.subtotal).toBe(3500); // 2000 + (3*500)
+      expect(res.body.data.totals.totalGst).toBe(630); // 18% of 3500
+      expect(res.body.data.totals.grandTotal).toBe(4130);
+      expect(res.body.data.notes).toBe('Updated draft');
+
+      // Task1 should be un-billed (was in old items, not in new)
+      const t1 = await Task.findById(taskId1);
+      expect(t1?.isBilled).toBe(false);
+    });
+
+    it('should allow updating status from Draft to Unpaid and auto-bill tasks', async () => {
+      const res = await request(app)
+        .put(`/api/v1/invoices/${invoiceId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'Unpaid' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('Unpaid');
+
+      // Task2 should now be billed via post-save hook
+      const t2 = await Task.findById(taskId2);
+      expect(t2?.isBilled).toBe(true);
+      expect(t2?.invoiceId?.toString()).toBe(invoiceId);
+    });
+
+    it('should reject updates to non-Draft invoices', async () => {
+      // invoiceId is now 'Unpaid' from the previous test
+      const res = await request(app)
+        .put(`/api/v1/invoices/${invoiceId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ notes: 'Should fail' });
+
+      expect(res.status).toBe(400);
+    });
+  });
 
   describe('Phase 43: Invoice Cancellation', () => {
     it('should cancel invoice and unlock the tasks', async () => {
@@ -158,12 +266,12 @@ describe('Phase 40-43: Financials - Billing & Invoicing', () => {
       expect(res.body.data.status).toBe('Cancelled');
       expect(res.body.data.totals.amountDue).toBe(0);
 
-      // Verify task1 is NO LONGER billed
-      const t1 = await Task.findById(taskId1);
-      expect(t1?.isBilled).toBe(false);
-      expect(t1?.invoiceId).toBeUndefined();
+      // Verify task2 is NO LONGER billed
+      const t2 = await Task.findById(taskId2);
+      expect(t2?.isBilled).toBe(false);
+      expect(t2?.invoiceId).toBeUndefined();
 
-      // Verify it appears back in unbilled tasks list
+      // Verify both tasks appear back in unbilled tasks list
       const unbilledRes = await request(app)
         .get(`/api/v1/invoices/unbilled/${clientId}`)
         .set('Authorization', `Bearer ${adminToken}`);

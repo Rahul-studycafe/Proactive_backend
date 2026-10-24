@@ -94,9 +94,9 @@ export const uploadClientDocument = asyncHandler(async (req: Request, res: Respo
 
   const fileUrl = `${process.env.BACKEND_URL || 'http://localhost:5000'}/public/uploads/clients/${clientId}/documents/${data.category}/${req.file.filename}`;
 
-  const document = await DocumentModel.create({
+  const document: any = await DocumentModel.create({
     tenantId: req.tenantId,
-    clientId: clientId,
+    clientId: clientId as string,
     category: data.category,
     fileName: req.file.originalname,
     fileUrl: fileUrl,

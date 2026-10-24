@@ -30,6 +30,31 @@ export interface ITenantSettings extends Document {
   defaultGstPercentage: number;
   financialYearStart: number;
   
+  workingDays?: {
+    weekends: string[];
+    standardWorkHoursPerDay: number;
+    alternateWeekendRules?: {
+      day: string;
+      weeks: number[];
+    };
+  };
+
+  officeLocation?: {
+    latitude: number;
+    longitude: number;
+    geofenceRadiusMeters?: number;
+    enforceGeofence?: boolean;
+  };
+
+  officePerimeter?: {
+    enableIpWhitelist: boolean;
+    ipWhitelist: string[];
+    enforceGeofence: boolean;
+    latitude?: number;
+    longitude?: number;
+    geofenceRadiusMeters: number;
+  };
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -52,6 +77,41 @@ const tenantSettingsSchema = new Schema<ITenantSettings>({
     workingHoursPerDay: { type: Number, default: 8 },
     overtimeThreshold: { type: Number, default: 480 } // minutes
   },
+
+  // Phase 51: Operational Work Days & Weekends
+  workingDays: {
+    weekends: {
+      type: [String],
+      enum: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+      default: ['Sunday']
+    },
+    standardWorkHoursPerDay: {
+      type: Number,
+      default: 8.5
+    },
+    alternateWeekendRules: {
+      day: { type: String, default: 'Saturday' },
+      weeks: { type: [Number], default: [] }
+    }
+  },
+
+  // Office Location & Geofencing (Legacy)
+  officeLocation: {
+    latitude: { type: Number },
+    longitude: { type: Number },
+    geofenceRadiusMeters: { type: Number, default: 150 },
+    enforceGeofence: { type: Boolean, default: false }
+  },
+
+  // Dual-Mode Office Perimeter (IP Whitelist & GPS Geofence)
+  officePerimeter: {
+    enableIpWhitelist: { type: Boolean, default: false },
+    ipWhitelist: { type: [String], default: [] },
+    enforceGeofence: { type: Boolean, default: false },
+    latitude: { type: Number },
+    longitude: { type: Number },
+    geofenceRadiusMeters: { type: Number, default: 150 }
+  },
   
   // Notification Config
   notifications: {
@@ -68,4 +128,6 @@ const tenantSettingsSchema = new Schema<ITenantSettings>({
 
 tenantSettingsSchema.plugin(tenantPlugin);
 
-export const TenantSettings = mongoose.model<ITenantSettings>('TenantSettings', tenantSettingsSchema);
+export const TenantSettings =
+  (mongoose.models.TenantSettings as mongoose.Model<ITenantSettings>) ||
+  mongoose.model<ITenantSettings>('TenantSettings', tenantSettingsSchema);

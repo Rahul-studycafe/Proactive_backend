@@ -26,6 +26,7 @@ export interface IOrganization extends Document {
   };
   isActive: boolean;
   lastInvoiceNumber?: number;
+  lastReceiptNumber?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -59,7 +60,8 @@ const organizationSchema = new Schema<IOrganization>({
     pincode: { type: String }
   },
   isActive: { type: Boolean, default: true },
-  lastInvoiceNumber: { type: Number, default: 0 }
+  lastInvoiceNumber: { type: Number, default: 0 },
+  lastReceiptNumber: { type: Number, default: 0 }
 }, { timestamps: true });
 
 export const Organization = mongoose.model<IOrganization>('Organization', organizationSchema);

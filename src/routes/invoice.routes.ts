@@ -5,6 +5,7 @@ import {
   getUnbilledTasks,
   createInvoice,
   getInvoices,
+  getInvoiceById,
   updateInvoice,
   cancelInvoice
 } from '../controllers/invoice.controller';
@@ -19,6 +20,7 @@ router.get('/unbilled/:clientId', authorize('invoice', 'create'), getUnbilledTas
 // Invoice CRUD
 router.post('/', authorize('invoice', 'create'), createInvoice);
 router.get('/', authorize('invoice', 'view'), getInvoices);
+router.get('/:id', authorize('invoice', 'view'), getInvoiceById);
 router.put('/:id', authorize('invoice', 'edit'), updateInvoice);
 router.delete('/:id', authorize('invoice', 'delete'), cancelInvoice);
 

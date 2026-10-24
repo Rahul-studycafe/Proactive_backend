@@ -20,7 +20,7 @@ describe('Phase 22-26: Masters & Settings APIs', () => {
   beforeAll(async () => {
     await connectDB();
     await Organization.deleteOne({ slug: orgSlug });
-    await User.deleteMany({ username: 'admin22' }).setOptions({ skipTenantPlugin: true });
+    await User.deleteMany({ email: 'admin22@test.com' }).setOptions({ skipTenantPlugin: true });
 
     const org = new Organization({ name: 'Org 22', slug: orgSlug });
     const savedOrg = await org.save();
@@ -29,16 +29,17 @@ describe('Phase 22-26: Masters & Settings APIs', () => {
     const superRole = new Role({ tenantId: orgId, name: 'Super Admin', isSuperAdmin: true, permissions: {} });
     const savedSuperRole = await superRole.save();
 
-    const adminUser = new User({ tenantId: orgId, name: 'Admin', username: 'admin22', password: 'password', roleId: savedSuperRole._id });
+    const adminUser = new User({ tenantId: orgId, name: 'Admin', username: 'admin22', email: 'admin22@test.com', password: 'password', roleId: savedSuperRole._id });
     await adminUser.save();
 
-    const loginRes = await request(app).post('/api/v1/auth/login').send({ orgSlug, username: 'admin22', password: 'password' });
+    const loginRes = await request(app).post('/api/v1/auth/login').send({ email: 'admin22@test.com', password: 'password' });
     adminToken = loginRes.body.data.accessToken;
   });
 
   afterAll(async () => {
     await Organization.deleteOne({ slug: orgSlug });
-    await User.deleteMany({ username: 'admin22' }).setOptions({ skipTenantPlugin: true });
+    await User.deleteMany({ email: 'admin22@test.com' }).setOptions({ skipTenantPlugin: true });
+    await Role.deleteMany({ tenantId: orgId }).setOptions({ skipTenantPlugin: true });
     await mongoose.connection.close();
   });
 

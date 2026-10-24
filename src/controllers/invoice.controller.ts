@@ -45,19 +45,14 @@ export const getUnbilledTasks = asyncHandler(async (req: Request, res: Response)
   sendSuccess(res, 200, 'Success', unbilledTasks);
 });
 
-export const createInvoice = asyncHandler(async (req: Request, res: Response) => {
-  const data = createInvoiceSchema.parse(req.body);
-
-  // Generate sequence number
-  const invoiceNo = await getNextInvoiceNumber(req.tenantId as mongoose.Types.ObjectId, 'INV-');
-
-  // Calculate totals
+// ─── Shared helper: calculate line-item totals ──────────────────
+function calculateItemTotals(items: z.infer<typeof invoiceItemSchema>[]) {
   let subtotal = 0;
   let totalDiscount = 0;
   let totalTaxable = 0;
   let totalGst = 0;
 
-  const processedItems = data.items.map(item => {
+  const processedItems = items.map(item => {
     const itemSubtotal = item.quantity * item.rate;
     const itemDiscount = item.discount;
     const taxableAmount = itemSubtotal - itemDiscount;
@@ -69,27 +64,31 @@ export const createInvoice = asyncHandler(async (req: Request, res: Response) =>
     totalTaxable += taxableAmount;
     totalGst += gstAmount;
 
-    return {
-      ...item,
-      taxableAmount,
-      gstAmount,
-      total
-    };
+    return { ...item, taxableAmount, gstAmount, total };
   });
 
   const grandTotalRaw = totalTaxable + totalGst;
   const grandTotal = Math.round(grandTotalRaw);
   const roundOff = grandTotal - grandTotalRaw;
 
+  return {
+    processedItems,
+    totals: { subtotal, totalDiscount, totalTaxable, totalGst, roundOff, grandTotal }
+  };
+}
+
+export const createInvoice = asyncHandler(async (req: Request, res: Response) => {
+  const data = createInvoiceSchema.parse(req.body);
+
+  // Generate sequence number
+  const invoiceNo = await getNextInvoiceNumber(req.tenantId as mongoose.Types.ObjectId, 'INV-');
+
+  const { processedItems, totals: calcTotals } = calculateItemTotals(data.items);
+
   const totals = {
-    subtotal,
-    totalDiscount,
-    totalTaxable,
-    totalGst,
-    roundOff,
-    grandTotal,
+    ...calcTotals,
     amountPaid: 0,
-    amountDue: grandTotal
+    amountDue: calcTotals.grandTotal
   };
 
   const invoice = new Invoice({
@@ -134,8 +133,18 @@ export const getInvoices = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
+export const getInvoiceById = asyncHandler(async (req: Request, res: Response) => {
+  const invoice = await Invoice.findOne({ _id: req.params.id, tenantId: req.tenantId })
+    .populate(
+      'clientId',
+      'name fileNo pan gstin email mobile secondaryMobile address city state pincode entityType contactPersonName'
+    )
+    .populate('billingEntityId');
+  if (!invoice) throw new ApiError(404, 'Invoice not found');
+  sendSuccess(res, 200, 'Success', invoice);
+});
+
 export const updateInvoice = asyncHandler(async (req: Request, res: Response) => {
-  // Only drafts can be fully updated safely without complex reversal logic
   const invoice = await Invoice.findOne({ _id: req.params.id, tenantId: req.tenantId });
   if (!invoice) throw new ApiError(404, 'Invoice not found');
 
@@ -143,10 +152,46 @@ export const updateInvoice = asyncHandler(async (req: Request, res: Response) =>
     throw new ApiError(400, 'Only Draft invoices can be modified directly');
   }
 
-  // Similar logic as createInvoice would go here for recalculation...
-  // For the MVP, we might only allow updating basic fields on Drafts or just recommend cancel + recreate.
-  
-  sendSuccess(res, 200, 'Not implemented for MVP yet', {});
+  const updateSchema = createInvoiceSchema.partial();
+  const data = updateSchema.parse(req.body);
+
+  // If items are being replaced, un-bill old task references first
+  if (data.items) {
+    const oldTaskIds = invoice.items
+      .filter(i => i.referenceType === 'Task' && i.referenceId)
+      .map(i => i.referenceId as mongoose.Types.ObjectId);
+
+    if (oldTaskIds.length > 0) {
+      await Task.updateMany(
+        { _id: { $in: oldTaskIds } },
+        { $set: { isBilled: false }, $unset: { invoiceId: 1 } }
+      );
+    }
+
+    // Recalculate with new items
+    const { processedItems, totals: calcTotals } = calculateItemTotals(data.items);
+
+    invoice.items = processedItems as any;
+    invoice.totals = {
+      ...calcTotals,
+      amountPaid: invoice.totals.amountPaid,
+      amountDue: calcTotals.grandTotal - invoice.totals.amountPaid
+    };
+  }
+
+  // Update allowed top-level fields
+  if (data.clientId) invoice.clientId = new mongoose.Types.ObjectId(data.clientId);
+  if (data.date) invoice.date = new Date(data.date);
+  if (data.dueDate) invoice.dueDate = new Date(data.dueDate);
+  if (data.paymentTerms !== undefined) invoice.paymentTerms = data.paymentTerms;
+  if (data.notes !== undefined) invoice.notes = data.notes;
+  if (data.termsAndConditions !== undefined) invoice.termsAndConditions = data.termsAndConditions;
+  if (data.billingEntityId) invoice.billingEntityId = new mongoose.Types.ObjectId(data.billingEntityId);
+  if (data.status) invoice.status = data.status; // Draft → Unpaid transition allowed
+
+  await invoice.save(); // Post-save hook auto-bills tasks if status !== Draft/Cancelled
+
+  sendSuccess(res, 200, 'Invoice updated successfully', invoice);
 });
 
 export const cancelInvoice = asyncHandler(async (req: Request, res: Response) => {

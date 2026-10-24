@@ -82,8 +82,11 @@ export interface IRole extends Document {
       delete: IPermissionAction;
     };
     attendance: {
-      markAttendance: IPermissionAction;
-      markPastFuture: IPermissionAction;
+      markAttendance?: IPermissionAction;
+      markPastFuture?: IPermissionAction;
+      manage?: IPermissionAction;
+      view_self?: IPermissionAction;
+      view?: IPermissionAction;
     };
     todo: {
       assignToOthers: IPermissionAction;
@@ -178,7 +181,10 @@ const roleSchema = new Schema<IRole>({
     },
     attendance: {
       markAttendance: permissionActionSchema,
-      markPastFuture: permissionActionSchema
+      markPastFuture: permissionActionSchema,
+      manage: permissionActionSchema,
+      view_self: permissionActionSchema,
+      view: permissionActionSchema
     },
     todo: {
       assignToOthers: permissionActionSchema

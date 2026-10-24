@@ -16,6 +16,7 @@ const createUserSchema = z.object({
   confirmPassword: z.string(),
   roleId: z.string().length(24, 'Invalid role ID'),
   photoUrl: z.string().optional(),
+  joiningDate: z.string().or(z.date()).optional(),
   isActive: z.boolean().optional().default(true)
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
@@ -29,7 +30,7 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
     throw new ApiError(400, 'Validation Error', 'VALIDATION_ERROR', errors);
   }
 
-  const { name, username, email, mobile, password, roleId, photoUrl, isActive } = result.data;
+  const { name, username, email, mobile, password, roleId, photoUrl, joiningDate, isActive } = result.data;
 
   const role = await Role.findById(roleId);
   if (!role) {
@@ -50,6 +51,7 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
     password,
     roleId,
     photoUrl,
+    joiningDate: joiningDate ? new Date(joiningDate) : undefined,
     isActive
   });
 
@@ -120,6 +122,7 @@ const updateUserSchema = z.object({
   confirmPassword: z.string().optional(),
   roleId: z.string().length(24).optional(),
   photoUrl: z.string().optional(),
+  joiningDate: z.string().or(z.date()).optional().nullable(),
   isActive: z.boolean().optional()
 }).refine((data) => {
   if (data.password || data.confirmPassword) {
@@ -168,6 +171,9 @@ export const updateUser = asyncHandler(async (req: Request, res: Response) => {
   if (updates.roleId !== undefined) user.roleId = updates.roleId as any;
   if (updates.photoUrl !== undefined) user.photoUrl = updates.photoUrl;
   if (updates.password !== undefined) user.password = updates.password;
+  if (updates.joiningDate !== undefined) {
+    user.joiningDate = updates.joiningDate ? new Date(updates.joiningDate) : undefined;
+  }
 
   if (updates.isActive !== undefined) {
     if (user.isActive === true && updates.isActive === false) {

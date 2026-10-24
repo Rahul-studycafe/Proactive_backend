@@ -18,6 +18,14 @@ import invoiceRoutes from './routes/invoice.routes';
 import paymentRoutes from './routes/payment.routes';
 import packageRoutes from './routes/package.routes';
 import documentRoutes from './routes/document.routes';
+import receiptRoutes from './routes/receipt.routes';
+import ledgerRoutes from './routes/ledger.routes';
+import dashboardRoutes from './routes/dashboard.routes';
+import holidayRoutes from './routes/holiday.routes';
+import tenantSettingsRoutes from './routes/tenant-settings.routes';
+import attendanceRoutes from './routes/attendance.routes';
+import automationRoutes from './routes/automation.routes';
+import analyticsRoutes from './routes/analytics.routes';
 
 const app: Express = express();
 
@@ -77,6 +85,14 @@ app.use('/api/v1/packages', packageRoutes);
 app.use('/api/v1/tasks', taskRoutes);
 app.use('/api/v1/invoices', invoiceRoutes);
 app.use('/api/v1/documents', documentRoutes);
+app.use('/api/v1/receipts', receiptRoutes);
+app.use('/api/v1/ledger', ledgerRoutes);
+app.use('/api/v1/dashboard', dashboardRoutes);
+app.use('/api/v1/holidays', holidayRoutes);
+app.use('/api/v1/tenant-settings', tenantSettingsRoutes);
+app.use('/api/v1/attendance', attendanceRoutes);
+app.use('/api/v1/automation', automationRoutes);
+app.use('/api/v1/analytics', analyticsRoutes);
 
 // ─── Fallback & Error Handling ───────────────────────────────────
 app.use((req: Request, res: Response, next: NextFunction) => {

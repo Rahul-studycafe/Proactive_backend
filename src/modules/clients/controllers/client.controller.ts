@@ -116,7 +116,8 @@ export const createClient = asyncHandler(async (req: Request, res: Response) => 
 });
 
 export const updateClient = asyncHandler(async (req: Request, res: Response) => {
-  const data = clientSchema.parse(req.body);
+  const updateSchema = clientSchema.partial();
+  const data = updateSchema.parse(req.body);
   const client = await Client.findOneAndUpdate(
     { _id: req.params.id, tenantId: req.tenantId },
     data,

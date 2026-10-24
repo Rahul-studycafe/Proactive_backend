@@ -11,7 +11,10 @@ export interface IUser extends Document {
   password?: string;
   photoUrl?: string;
   roleId: mongoose.Types.ObjectId;
+  departmentId?: mongoose.Types.ObjectId;
+  managerId?: mongoose.Types.ObjectId;
   isActive: boolean;
+  joiningDate?: Date;
   tokenVersion: number;
   refreshToken?: string;
   comparePassword: (candidatePassword: string) => Promise<boolean>;
@@ -32,9 +35,12 @@ const userSchema = new Schema<IUser>({
   // Profile
   photoUrl: { type: String, default: '' },
   
-  // Access Control
+  // Access Control & Organization
   roleId: { type: Schema.Types.ObjectId, ref: 'Role', required: true },
+  departmentId: { type: Schema.Types.ObjectId, ref: 'Department' },
+  managerId: { type: Schema.Types.ObjectId, ref: 'User' },
   isActive: { type: Boolean, default: true },
+  joiningDate: { type: Date },
   
   // Security — JWT Invalidation
   tokenVersion: { type: Number, default: 0 },
