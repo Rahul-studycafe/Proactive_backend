@@ -26,6 +26,19 @@ import tenantSettingsRoutes from './routes/tenant-settings.routes';
 import attendanceRoutes from './routes/attendance.routes';
 import automationRoutes from './routes/automation.routes';
 import analyticsRoutes from './routes/analytics.routes';
+import dscRoutes from './routes/dsc.routes';
+import creditNoteRoutes from './routes/credit-note.routes';
+import docsInOutRoutes from './routes/physical-document.routes';
+import documentRequestRoutes from './routes/document-request.routes';
+import publicDocumentRequestRoutes from './routes/public-document-request.routes';
+import complianceRoutes from './routes/compliance.routes';
+import passwordVaultRoutes from './routes/password-vault.routes';
+import expenseRoutes from './routes/expense.routes';
+import billingRoutes from './routes/billing.routes';
+import quotationRoutes from './routes/quotation.routes';
+import reportRoutes from './routes/report.routes';
+import notificationRoutes from './routes/notification.routes';
+import accountingRoutes from './routes/accounting.routes';
 
 const app: Express = express();
 
@@ -67,6 +80,7 @@ app.use('/api/v1/payment', paymentRoutes);
 
 // Health check endpoint (public)
 app.use('/api/v1/health', healthRoutes);
+app.use('/api/v1/public/document-requests', publicDocumentRequestRoutes);
 
 // ─── Protected Routes (auth required, tenant-scoped) ────────────
 // All routes below this line require a valid JWT.
@@ -93,6 +107,18 @@ app.use('/api/v1/tenant-settings', tenantSettingsRoutes);
 app.use('/api/v1/attendance', attendanceRoutes);
 app.use('/api/v1/automation', automationRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
+app.use('/api/v1/dsc', dscRoutes);
+app.use('/api/v1/credit-notes', creditNoteRoutes);
+app.use('/api/v1/docs-in-out', docsInOutRoutes);
+app.use('/api/v1/document-requests', documentRequestRoutes);
+app.use('/api/v1/compliance', complianceRoutes);
+app.use('/api/v1/passwords', passwordVaultRoutes);
+app.use('/api/v1/expenses', expenseRoutes);
+app.use('/api/v1/billing', billingRoutes);
+app.use('/api/v1/quotations', quotationRoutes);
+app.use('/api/v1/reports', reportRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/accounting', accountingRoutes);
 
 // ─── Fallback & Error Handling ───────────────────────────────────
 app.use((req: Request, res: Response, next: NextFunction) => {

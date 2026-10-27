@@ -104,3 +104,26 @@ export const updateWorkingDays = asyncHandler(
     );
   }
 );
+
+export const getBillingEntities = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.tenantId) {
+    throw new ApiError(403, 'Tenant context missing', 'FORBIDDEN');
+  }
+
+  const { BillingEntity } = await import('../modules/masters/schemas');
+  const entities = await BillingEntity.find({ tenantId: req.tenantId }).sort({ createdAt: -1 });
+  return sendSuccess(res, 200, 'Billing entities retrieved', entities);
+});
+
+export const createBillingEntity = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.tenantId) {
+    throw new ApiError(403, 'Tenant context missing', 'FORBIDDEN');
+  }
+
+  const { BillingEntity } = await import('../modules/masters/schemas');
+  const entity = await BillingEntity.create({
+    tenantId: req.tenantId,
+    ...req.body
+  });
+  return sendSuccess(res, 201, 'Billing entity created successfully', entity);
+});

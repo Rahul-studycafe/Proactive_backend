@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createUser, getUsers, getUserById, updateUser } from '../modules/users/controllers/user.controller';
+import { createUser, getUsers, getUserById, updateUser, replaceUser } from '../modules/users/controllers/user.controller';
 import { authenticate } from '../middlewares/authenticate';
 import { authorize } from '../middlewares/authorize';
 
@@ -7,6 +7,9 @@ const router = Router();
 
 // All user routes require authentication
 router.use(authenticate);
+
+// Phase 120: Atomic User Replacement Utility (Staff Handover)
+router.post('/replace-user', replaceUser);
 
 // List users (requires 'user.view' permission)
 router.get('/', authorize('user', 'view'), getUsers);

@@ -39,6 +39,9 @@ export interface IClient extends Document {
   allowNotifications: boolean;
   allowLogin: boolean;
   isActive: boolean;
+  panVerified?: boolean;
+  gstinVerified?: boolean;
+  verifiedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -70,6 +73,9 @@ const clientSchema = new Schema<IClient>({
   // Tax Identifiers
   pan: { type: String, uppercase: true, trim: true },
   gstin: { type: String, uppercase: true, trim: true },
+  panVerified: { type: Boolean, default: false },
+  gstinVerified: { type: Boolean, default: false },
+  verifiedAt: { type: Date },
   
   // Metadata / Classification
   photoUrl: { type: String, default: '' },

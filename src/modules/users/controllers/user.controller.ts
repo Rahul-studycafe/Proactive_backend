@@ -190,3 +190,39 @@ export const updateUser = asyncHandler(async (req: Request, res: Response) => {
 
   return sendSuccess(res, 200, 'User updated successfully', { user: userResponse });
 });
+
+/**
+ * Phase 120: Atomic User Replacement Utility (Staff Handover)
+ */
+export const replaceUser = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.tenantId) {
+    throw new ApiError(403, 'Tenant context missing', 'FORBIDDEN');
+  }
+
+  const {
+    departingUserId,
+    replacementUserId,
+    reassignTasks,
+    reassignClients,
+    reassignServices
+  } = req.body;
+
+  if (!departingUserId || !replacementUserId) {
+    throw new ApiError(
+      400,
+      'departingUserId and replacementUserId are required',
+      'VALIDATION_FAILED'
+    );
+  }
+
+  const { replaceUserService } = await import('../../../services/user-replacement.service');
+  const result = await replaceUserService(req.tenantId as any, {
+    departingUserId,
+    replacementUserId,
+    reassignTasks,
+    reassignClients,
+    reassignServices
+  });
+
+  return sendSuccess(res, 200, 'User responsibilities replaced successfully', result);
+});

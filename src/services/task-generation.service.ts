@@ -333,8 +333,15 @@ export const scanAndGenerateRecurringTasks = async (
         }
 
         executionDetails.push({
-          clientId: client._id as mongoose.Types.ObjectId,
-          serviceId: target.serviceId,
+          clientId: {
+            _id: client._id,
+            name: client.name,
+            fileNo: client.fileNo
+          } as any,
+          serviceId: {
+            _id: target.serviceId,
+            name: service.name
+          } as any,
           period: periodStr,
           status: genResult.status,
           reason: genResult.reason

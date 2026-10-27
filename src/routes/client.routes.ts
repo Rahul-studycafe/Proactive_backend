@@ -12,14 +12,16 @@ import {
 import { authenticate } from '../middlewares/authenticate';
 import { authorize } from '../middlewares/authorize';
 import { uploadClientMiddleware } from '../middlewares/upload';
+import { autoFillClientFromGstin } from '../controllers/compliance.controller';
 
 const router = Router();
 
 // Protect all client routes
 router.use(authenticate);
 
-// Upload photo (must be before /:id)
+// Upload photo & Auto-fill from GSTIN (must be before /:id)
 router.post('/upload-photo', authorize('client', 'create'), uploadClientMiddleware.single('photo'), uploadClientPhoto);
+router.post('/auto-fill-from-gstin', authorize('client', 'create'), autoFillClientFromGstin);
 
 // List clients (requires view permission)
 router.get('/', authorize('client', 'view'), getClients);

@@ -123,6 +123,18 @@ invoiceSchema.post('save', async function (doc) {
         { $set: { isBilled: true, invoiceId: doc._id } }
       );
     }
+
+    const expenseIds = doc.items
+      .filter(i => i.referenceType === 'Expense' && i.referenceId)
+      .map(i => i.referenceId as mongoose.Types.ObjectId);
+
+    if (expenseIds.length > 0) {
+      const Expense = mongoose.model('Expense');
+      await Expense.updateMany(
+        { _id: { $in: expenseIds } },
+        { $set: { isBilled: true, invoiceId: doc._id, billedAt: new Date() } }
+      );
+    }
   }
 });
 

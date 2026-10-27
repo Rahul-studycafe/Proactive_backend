@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { Invoice } from '../models/Invoice';
 import { Receipt } from '../models/Receipt';
+import { CreditNote } from '../models/CreditNote';
 import { Client } from '../modules/clients/schemas';
 import { ApiError } from '../common/errors/api-error';
 
@@ -33,11 +34,17 @@ export const calculateClientLedger = async (
     clientId
   };
 
+  const creditNoteQuery: any = {
+    tenantId,
+    clientId,
+    status: { $ne: 'Cancelled' }
+  };
+
   // If a 'from' date filter is provided, calculate rolling balance of prior records
   if (options.from) {
     const fromDate = new Date(options.from);
 
-    const [priorInvoices, priorReceipts] = await Promise.all([
+    const [priorInvoices, priorReceipts, priorCreditNotes] = await Promise.all([
       Invoice.find({
         tenantId,
         clientId,
@@ -48,6 +55,12 @@ export const calculateClientLedger = async (
         tenantId,
         clientId,
         date: { $lt: fromDate }
+      }).lean(),
+      CreditNote.find({
+        tenantId,
+        clientId,
+        status: { $ne: 'Cancelled' },
+        date: { $lt: fromDate }
       }).lean()
     ]);
 
@@ -55,16 +68,16 @@ export const calculateClientLedger = async (
       (sum, inv) => sum + (inv.totals?.grandTotal || 0),
       0
     );
-    const priorCredits = priorReceipts.reduce(
-      (sum, rct) => sum + (rct.totalAmount || 0),
-      0
-    );
+    const priorCredits =
+      priorReceipts.reduce((sum, rct) => sum + (rct.totalAmount || 0), 0) +
+      priorCreditNotes.reduce((sum, cn) => sum + (cn.totals?.grandTotal || 0), 0);
 
     effectiveOpeningBalance =
       Math.round((baseOpeningBalance + priorDebits - priorCredits) * 100) / 100;
 
     invoiceQuery.date = { $gte: fromDate };
     receiptQuery.date = { $gte: fromDate };
+    creditNoteQuery.date = { $gte: fromDate };
   }
 
   if (options.to) {
@@ -75,21 +88,24 @@ export const calculateClientLedger = async (
     }
     invoiceQuery.date = { ...(invoiceQuery.date || {}), $lte: toDate };
     receiptQuery.date = { ...(receiptQuery.date || {}), $lte: toDate };
+    creditNoteQuery.date = { ...(creditNoteQuery.date || {}), $lte: toDate };
   }
 
   // Fetch period entries
-  const [invoices, receipts] = await Promise.all([
+  const [invoices, receipts, creditNotes] = await Promise.all([
     Invoice.find(invoiceQuery).lean(),
-    Receipt.find(receiptQuery).lean()
+    Receipt.find(receiptQuery).lean(),
+    CreditNote.find(creditNoteQuery).populate('invoiceId', 'invoiceNo').lean()
   ]);
 
   // Unify entries into single stream
   const entries: Array<{
     date: Date;
     createdAt?: Date;
-    type: 'Invoice' | 'Receipt';
+    type: 'Invoice' | 'Receipt' | 'Credit Note';
     referenceNo: string;
     referenceId: any;
+    invoiceNo?: string;
     debit: number;
     credit: number;
     status: string;
@@ -97,6 +113,7 @@ export const calculateClientLedger = async (
     items?: any[];
     paymentMode?: string;
     referenceNumber?: string;
+    unallocatedCredit?: number;
     balance?: number;
   }> = [
     ...invoices.map((inv) => ({
@@ -126,6 +143,22 @@ export const calculateClientLedger = async (
       }`,
       paymentMode: rct.paymentMode,
       referenceNumber: rct.referenceNumber
+    })),
+    ...creditNotes.map((cn: any) => ({
+      date: cn.date,
+      createdAt: cn.createdAt,
+      type: 'Credit Note' as const,
+      referenceNo: cn.creditNoteNo,
+      referenceId: cn._id,
+      invoiceNo: cn.invoiceId?.invoiceNo || 'N/A',
+      debit: 0,
+      credit: cn.totals?.grandTotal || 0,
+      status: cn.status,
+      particulars: `Credit Note for Inv #${cn.invoiceId?.invoiceNo || 'N/A'}${
+        cn.reason ? ` - ${cn.reason}` : ''
+      }`,
+      items: cn.items,
+      unallocatedCredit: cn.unallocatedCredit
     }))
   ];
 
@@ -143,10 +176,14 @@ export const calculateClientLedger = async (
   let runningBalance = effectiveOpeningBalance;
   let totalDebits = 0;
   let totalCredits = 0;
+  let totalCreditNotes = 0;
 
   for (const entry of entries) {
     totalDebits += entry.debit;
     totalCredits += entry.credit;
+    if (entry.type === 'Credit Note') {
+      totalCreditNotes += entry.credit;
+    }
     runningBalance =
       Math.round((runningBalance + entry.debit - entry.credit) * 100) / 100;
     entry.balance = runningBalance;
@@ -165,6 +202,8 @@ export const calculateClientLedger = async (
     entries,
     totalDebits: Math.round(totalDebits * 100) / 100,
     totalCredits: Math.round(totalCredits * 100) / 100,
+    totalCreditNotes: Math.round(totalCreditNotes * 100) / 100,
     closingBalance: runningBalance
   };
 };
+

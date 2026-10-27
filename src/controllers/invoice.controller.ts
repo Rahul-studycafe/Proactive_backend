@@ -4,6 +4,8 @@ import { sendSuccess } from '../utils/ApiResponse';
 import { ApiError } from '../utils/ApiError';
 import { Invoice } from '../models/Invoice';
 import { Task } from '../models/Task';
+import { Expense } from '../models/Expense';
+import { ExpenseService } from '../services/expense.service';
 import { getNextInvoiceNumber } from '../services/sequence.service';
 import { z } from 'zod';
 import mongoose from 'mongoose';
@@ -45,6 +47,15 @@ export const getUnbilledTasks = asyncHandler(async (req: Request, res: Response)
   sendSuccess(res, 200, 'Success', unbilledTasks);
 });
 
+export const getUnbilledExpenses = asyncHandler(async (req: Request, res: Response) => {
+  const clientId = req.params.clientId as string;
+  const result = await ExpenseService.getUnbilledExpensesForClient(
+    req.tenantId as mongoose.Types.ObjectId,
+    clientId
+  );
+  sendSuccess(res, 200, 'Success', result);
+});
+
 // ─── Shared helper: calculate line-item totals ──────────────────
 function calculateItemTotals(items: z.infer<typeof invoiceItemSchema>[]) {
   let subtotal = 0;
@@ -79,6 +90,23 @@ function calculateItemTotals(items: z.infer<typeof invoiceItemSchema>[]) {
 
 export const createInvoice = asyncHandler(async (req: Request, res: Response) => {
   const data = createInvoiceSchema.parse(req.body);
+
+  // Validate referenced tasks and expenses
+  const expenseItemIds = data.items
+    .filter(i => i.referenceType === 'Expense' && i.referenceId)
+    .map(i => i.referenceId as string);
+
+  if (expenseItemIds.length > 0) {
+    const alreadyBilledExpenses = await Expense.find({
+      _id: { $in: expenseItemIds },
+      tenantId: req.tenantId,
+      isBilled: true
+    });
+
+    if (alreadyBilledExpenses.length > 0) {
+      throw new ApiError(409, 'One or more selected expenses have already been billed on another invoice');
+    }
+  }
 
   // Generate sequence number
   const invoiceNo = await getNextInvoiceNumber(req.tenantId as mongoose.Types.ObjectId, 'INV-');
@@ -168,6 +196,17 @@ export const updateInvoice = asyncHandler(async (req: Request, res: Response) =>
       );
     }
 
+    const oldExpenseIds = invoice.items
+      .filter(i => i.referenceType === 'Expense' && i.referenceId)
+      .map(i => i.referenceId as mongoose.Types.ObjectId);
+
+    if (oldExpenseIds.length > 0) {
+      await Expense.updateMany(
+        { _id: { $in: oldExpenseIds } },
+        { $set: { isBilled: false, billedAt: null }, $unset: { invoiceId: 1 } }
+      );
+    }
+
     // Recalculate with new items
     const { processedItems, totals: calcTotals } = calculateItemTotals(data.items);
 
@@ -189,7 +228,7 @@ export const updateInvoice = asyncHandler(async (req: Request, res: Response) =>
   if (data.billingEntityId) invoice.billingEntityId = new mongoose.Types.ObjectId(data.billingEntityId);
   if (data.status) invoice.status = data.status; // Draft → Unpaid transition allowed
 
-  await invoice.save(); // Post-save hook auto-bills tasks if status !== Draft/Cancelled
+  await invoice.save(); // Post-save hook auto-bills tasks & expenses if status !== Draft/Cancelled
 
   sendSuccess(res, 200, 'Invoice updated successfully', invoice);
 });
@@ -208,7 +247,7 @@ export const cancelInvoice = asyncHandler(async (req: Request, res: Response) =>
 
   invoice.status = 'Cancelled';
   invoice.totals.amountDue = 0;
-  await invoice.save(); // Crucial to use .save() so we can trigger hooks if needed, but wait:
+  await invoice.save();
 
   // Un-bill associated tasks
   const taskIds = invoice.items
@@ -219,6 +258,18 @@ export const cancelInvoice = asyncHandler(async (req: Request, res: Response) =>
     await Task.updateMany(
       { _id: { $in: taskIds } },
       { $set: { isBilled: false }, $unset: { invoiceId: 1 } }
+    );
+  }
+
+  // Un-bill associated expenses
+  const expenseIds = invoice.items
+    .filter(i => i.referenceType === 'Expense' && i.referenceId)
+    .map(i => i.referenceId as mongoose.Types.ObjectId);
+
+  if (expenseIds.length > 0) {
+    await Expense.updateMany(
+      { _id: { $in: expenseIds } },
+      { $set: { isBilled: false, billedAt: null }, $unset: { invoiceId: 1 } }
     );
   }
 

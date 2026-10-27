@@ -27,6 +27,10 @@ export interface IOrganization extends Document {
   isActive: boolean;
   lastInvoiceNumber?: number;
   lastReceiptNumber?: number;
+  lastCreditNoteNumber?: number;
+  lastDocumentRequestNumber?: number;
+  lastExpenseNumber?: number;
+  lastQuotationNumber?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -61,7 +65,11 @@ const organizationSchema = new Schema<IOrganization>({
   },
   isActive: { type: Boolean, default: true },
   lastInvoiceNumber: { type: Number, default: 0 },
-  lastReceiptNumber: { type: Number, default: 0 }
+  lastReceiptNumber: { type: Number, default: 0 },
+  lastCreditNoteNumber: { type: Number, default: 0 },
+  lastDocumentRequestNumber: { type: Number, default: 0 },
+  lastExpenseNumber: { type: Number, default: 0 },
+  lastQuotationNumber: { type: Number, default: 0 }
 }, { timestamps: true });
 
 export const Organization = mongoose.model<IOrganization>('Organization', organizationSchema);
