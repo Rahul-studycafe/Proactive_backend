@@ -38,6 +38,8 @@ export interface IInvoice extends Document {
   notes?: string;
   termsAndConditions?: string;
   pdfUrl?: string;
+  paymentLinkId?: string;
+  paymentShortUrl?: string;
   creditNoteIds: mongoose.Types.ObjectId[];
   createdAt: Date;
   updatedAt: Date;
@@ -96,6 +98,8 @@ const invoiceSchema = new Schema<IInvoice>({
   
   // PDF
   pdfUrl: { type: String },
+  paymentLinkId: { type: String },
+  paymentShortUrl: { type: String },
   
   // Credit Notes
   creditNoteIds: [{ type: Schema.Types.ObjectId, ref: 'CreditNote' }]

@@ -7,12 +7,23 @@ import {
   deleteClient,
   uploadClientPhoto,
   subscribeToPackage,
-  subscribeToService
+  subscribeToService,
+  unsubscribeFromPackage,
+  unsubscribeFromService,
 } from '../modules/clients/controllers/client.controller';
 import { authenticate } from '../middlewares/authenticate';
 import { authorize } from '../middlewares/authorize';
 import { uploadClientMiddleware } from '../middlewares/upload';
 import { autoFillClientFromGstin } from '../controllers/compliance.controller';
+import { checkClientLimit } from '../middlewares/plan-guard';
+import {
+  getClientPortalUsers,
+  createClientPortalUser,
+  updateClientPortalUser,
+  deleteClientPortalUser,
+  resetClientPortalUserPassword,
+  toggleClientPortalAccess
+} from '../controllers/client-portal-users.controller';
 
 const router = Router();
 
@@ -30,16 +41,26 @@ router.get('/', authorize('client', 'view'), getClients);
 router.get('/:id', authorize('client', 'view'), getClientById);
 
 // Create client (requires create permission)
-router.post('/', authorize('client', 'create'), createClient);
+router.post('/', authorize('client', 'create'), checkClientLimit, createClient);
 
 // Update client (requires edit permission)
 router.put('/:id', authorize('client', 'edit'), updateClient);
 
 // Subscribe to package (requires edit permission on client)
 router.post('/:id/packages', authorize('client', 'edit'), subscribeToPackage);
+router.delete('/:id/packages/:packageId', authorize('client', 'edit'), unsubscribeFromPackage);
 
 // Subscribe to service (requires edit permission on client)
 router.post('/:id/services', authorize('client', 'edit'), subscribeToService);
+router.delete('/:id/services/:serviceId', authorize('client', 'edit'), unsubscribeFromService);
+
+// Client Portal Access & Users Management
+router.get('/:id/portal-users', authorize('client', 'view'), getClientPortalUsers);
+router.post('/:id/portal-users', authorize('client', 'edit'), createClientPortalUser);
+router.put('/:id/portal-users/:userId', authorize('client', 'edit'), updateClientPortalUser);
+router.delete('/:id/portal-users/:userId', authorize('client', 'edit'), deleteClientPortalUser);
+router.post('/:id/portal-users/:userId/reset-password', authorize('client', 'edit'), resetClientPortalUserPassword);
+router.patch('/:id/portal-access', authorize('client', 'edit'), toggleClientPortalAccess);
 
 // Delete/Disable client (requires delete permission)
 router.delete('/:id', authorize('client', 'delete'), deleteClient);

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { createUser, getUsers, getUserById, updateUser, replaceUser } from '../modules/users/controllers/user.controller';
 import { authenticate } from '../middlewares/authenticate';
 import { authorize } from '../middlewares/authorize';
+import { checkSeatLimit } from '../middlewares/plan-guard';
 
 const router = Router();
 
@@ -17,8 +18,8 @@ router.get('/', authorize('user', 'view'), getUsers);
 // Get single user
 router.get('/:id', authorize('user', 'view'), getUserById);
 
-// Create a new user (requires 'user.create' permission)
-router.post('/', authorize('user', 'create'), createUser);
+// Create a new user (requires 'user.create' permission and within SaaS seat quota)
+router.post('/', authorize('user', 'create'), checkSeatLimit, createUser);
 
 // Update user (requires 'user.edit' permission)
 router.put('/:id', authorize('user', 'edit'), updateUser);

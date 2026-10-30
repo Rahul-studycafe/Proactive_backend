@@ -39,6 +39,13 @@ export const uploadDocument = asyncHandler(async (req: Request, res: Response) =
   const task = await Task.findOne({ _id: taskId, tenantId: req.tenantId });
   if (!task) throw new ApiError(404, 'Task not found');
 
+  if (task.status === 'Completed' || task.status === 'Cancelled') {
+    throw new ApiError(
+      400,
+      `Cannot upload files to a ${task.status.toLowerCase()} task. Please change its status to 'In Progress' or 'Under Review' first.`
+    );
+  }
+
   // Construct public URL from the local file path (assuming /public is mapped to /public)
   // For example: /public/uploads/clients/6a4b.../tasks/6a4b.../document/filename-1234.pdf
   // We need to strip the absolute path up to 'public'
@@ -113,6 +120,20 @@ import path from 'path';
 
 export const deleteDocument = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
+
+  const existingDoc = await DocumentModel.findOne({
+    _id: id,
+    tenantId: req.tenantId
+  });
+
+  if (!existingDoc) throw new ApiError(404, 'Document not found');
+
+  if (existingDoc.taskId) {
+    const task = await Task.findOne({ _id: existingDoc.taskId, tenantId: req.tenantId });
+    if (task && (task.status === 'Completed' || task.status === 'Cancelled')) {
+      throw new ApiError(400, `Cannot delete files from a ${task.status.toLowerCase()} task.`);
+    }
+  }
 
   const document = await DocumentModel.findOneAndDelete({
     _id: id,

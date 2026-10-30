@@ -42,7 +42,9 @@ export const getUnbilledTasks = asyncHandler(async (req: Request, res: Response)
     clientId,
     status: 'Completed',
     isBilled: false
-  }).select('title description billingAmount serviceId completedAt');
+  })
+    .populate('serviceId', 'name sacCode gstPercentage defaultBillingRate')
+    .select('description billingAmount billableAmount period serviceId completedAt dueDate');
 
   sendSuccess(res, 200, 'Success', unbilledTasks);
 });
@@ -108,8 +110,33 @@ export const createInvoice = asyncHandler(async (req: Request, res: Response) =>
     }
   }
 
-  // Generate sequence number
-  const invoiceNo = await getNextInvoiceNumber(req.tenantId as mongoose.Types.ObjectId, 'INV-');
+  // Resolve billing entity if provided or tenant default (Phase 142 & 143)
+  let resolvedBillingEntityId: mongoose.Types.ObjectId | undefined;
+  let invoicePrefix = 'INV-';
+
+  const { BillingEntity } = await import('../modules/masters/schemas/billing-entity.schema');
+  let entity: any = null;
+
+  if (data.billingEntityId) {
+    entity = await BillingEntity.findOne({ _id: data.billingEntityId, tenantId: req.tenantId });
+  } else {
+    entity = await BillingEntity.findOne({ tenantId: req.tenantId, isDefault: true });
+  }
+
+  if (entity) {
+    resolvedBillingEntityId = entity._id;
+    if (entity.invoicePrefix) {
+      invoicePrefix = entity.invoicePrefix;
+    }
+  }
+
+  // Generate sequence number (branch-isolated if entity resolved)
+  const invoiceNo = await getNextInvoiceNumber(
+    req.tenantId as mongoose.Types.ObjectId,
+    invoicePrefix,
+    undefined,
+    resolvedBillingEntityId
+  );
 
   const { processedItems, totals: calcTotals } = calculateItemTotals(data.items);
 
@@ -123,6 +150,7 @@ export const createInvoice = asyncHandler(async (req: Request, res: Response) =>
     tenantId: req.tenantId,
     invoiceNo,
     ...data,
+    billingEntityId: resolvedBillingEntityId || (data.billingEntityId ? new mongoose.Types.ObjectId(data.billingEntityId) : undefined),
     items: processedItems,
     totals
   });

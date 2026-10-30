@@ -25,6 +25,23 @@ declare global {
       
       /** The Mongoose filter object to apply data scoping (e.g., { assignedUserId: req.user._id }) */
       scopeFilter?: any;
+
+      /** Client Portal Authenticated User */
+      clientUser?: {
+        _id: mongoose.Types.ObjectId;
+        clientId: mongoose.Types.ObjectId;
+        tenantId: mongoose.Types.ObjectId;
+        name: string;
+        email: string;
+        phone: string;
+        isPrimaryContact: boolean;
+        tokenVersion: number;
+        role: 'Client';
+      };
+      /** Target client entity ID when authenticated via client portal */
+      clientId?: mongoose.Types.ObjectId;
+      /** Boolean indicator if current request is from a client portal user */
+      isClient?: boolean;
     }
   }
 }

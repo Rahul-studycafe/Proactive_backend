@@ -5,6 +5,7 @@ import { ApiError } from '../utils/ApiError';
 import { Task, TASK_STATUSES } from '../models/Task';
 import { Service } from '../modules/services/schemas';
 import { TaskHistory } from '../models/TaskHistory';
+import { createDocumentRequestService } from '../services/document-request.service';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 
@@ -46,14 +47,71 @@ const updateTaskSchema = z.object({
 
 export const createTask = asyncHandler(async (req: Request, res: Response) => {
   const data = createTaskSchema.parse(req.body);
+
+  // Validate that the client exists and is subscribed to this service
+  const { Client } = require('../modules/clients/schemas/client.schema');
+  const client = await Client.findOne({ _id: data.clientId, tenantId: req.tenantId })
+    .populate('subscribedPackages.packageId');
+  if (!client) {
+    throw new ApiError(404, 'Client not found');
+  }
+
+  const isDirectlySubscribed = client.subscribedServices?.some((sub: any) =>
+    sub.serviceId?.toString() === data.serviceId
+  );
+
+  const isPackageSubscribed = client.subscribedPackages?.some((sub: any) => {
+    const pkg = sub.packageId;
+    const pkgServices = pkg?.serviceIds || pkg?.services || [];
+    return pkgServices.some((s: any) => (s?._id || s)?.toString() === data.serviceId);
+  });
+
+  if (!isDirectlySubscribed && !isPackageSubscribed) {
+    throw new ApiError(
+      400,
+      'This client is not subscribed to the selected service. Tasks can only be created for subscribed services.'
+    );
+  }
   
   let checklist: any[] = [];
   let calculatedSubtasks: any[] = [];
   let assigneeIds = data.assigneeIds || [];
+  let service: any = null;
 
   if (data.serviceId) {
-    const service = await Service.findOne({ _id: data.serviceId, tenantId: req.tenantId });
+    service = await Service.findOne({ _id: data.serviceId, tenantId: req.tenantId });
     if (service) {
+      // For recurring services, enforce mandatory period selection
+      if (
+        service.isRecurring &&
+        service.frequency?.type &&
+        service.frequency.type !== 'one_time'
+      ) {
+        if (!data.period || !data.period.label) {
+          throw new ApiError(
+            400,
+            `Period is mandatory for recurring service (${service.frequency.type.replace('_', '-')}).`
+          );
+        }
+      }
+
+      // Prevent duplicate task creation for the same period (unless cancelled)
+      if (data.period?.label && data.period.label !== 'Ad-hoc') {
+        const existingTask = await Task.findOne({
+          tenantId: req.tenantId,
+          clientId: data.clientId,
+          serviceId: data.serviceId,
+          'period.label': data.period.label,
+          status: { $ne: 'Cancelled' }
+        });
+        if (existingTask) {
+          throw new ApiError(
+            400,
+            `A task for "${service.name}" for period "${data.period.label}" already exists for this client.`
+          );
+        }
+      }
+
       if (service.checklist) {
         checklist = service.checklist.map((step: any) => ({
           stepName: step.stepName,
@@ -109,7 +167,7 @@ export const createTask = asyncHandler(async (req: Request, res: Response) => {
       // Auto-assign logic
       if (assigneeIds.length === 0) {
         if (service.assignedUsers && service.assignedUsers.length > 0) {
-          assigneeIds = service.assignedUsers.map(id => id.toString());
+          assigneeIds = service.assignedUsers.map((id: any) => id.toString());
         } else {
           // Fallback to client default users if no specific users set for the service
           const { Client } = require('../modules/clients/schemas/client.schema');
@@ -122,15 +180,48 @@ export const createTask = asyncHandler(async (req: Request, res: Response) => {
     }
   }
 
+  const refDate = data.dueDate ? new Date(data.dueDate) : new Date();
+  const period = data.period || {
+    month: refDate.getMonth() + 1,
+    year: refDate.getFullYear(),
+    label: refDate.toLocaleString('en-US', { month: 'short', year: 'numeric' })
+  };
+
   const task = await Task.create({
     tenantId: req.tenantId,
     ...data,
+    period,
+    billingAmount: data.billableAmount || 0,
     assigneeIds,
     creationType: 'manual',
     checklist,
     subtasks: calculatedSubtasks,
     customFieldValues: (data as any).customFieldValues || {}
   });
+
+  // If document collection requested for this task, create the DocumentRequest record
+  if (task.docCollectionRequest) {
+    const defaultMsg = task.docCollectionMessage || 'Please provide the required compliance documents.';
+    const svcTitle = service ? service.name : (task.description || 'Task');
+    await createDocumentRequestService(
+      req.tenantId!,
+      {
+        clientId: task.clientId.toString(),
+        taskId: task._id.toString(),
+        title: `Document Request: ${svcTitle}`,
+        instructions: defaultMsg,
+        expiresInDays: 7,
+        items: [
+          {
+            name: `${svcTitle} Required Documents`,
+            description: defaultMsg,
+            isRequired: true
+          }
+        ]
+      },
+      req.user!._id
+    ).catch(err => console.error('[createTask] Auto doc request error:', err));
+  }
 
   sendSuccess(res, 201, 'Task created successfully', task);
 });
@@ -255,6 +346,15 @@ export const updateTask = asyncHandler(async (req: Request, res: Response) => {
   sendSuccess(res, 200, 'Task updated successfully', task);
 });
 
+const ensureTaskModifiable = (task: any) => {
+  if (task.status === 'Completed' || task.status === 'Cancelled') {
+    throw new ApiError(
+      400,
+      `Cannot modify a ${task.status.toLowerCase()} task. Please change its status back to 'In Progress' or 'Under Review' first.`
+    );
+  }
+};
+
 export const toggleChecklistStep = asyncHandler(async (req: Request, res: Response) => {
   const { stepIndex } = req.params;
   const { isCompleted } = req.body; // Boolean
@@ -262,6 +362,8 @@ export const toggleChecklistStep = asyncHandler(async (req: Request, res: Respon
 
   const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter });
   if (!task) throw new ApiError(404, 'Task not found');
+
+  ensureTaskModifiable(task);
 
   const idx = parseInt(stepIndex as string, 10);
   if (isNaN(idx) || idx < 0 || idx >= task.checklist.length) {
@@ -291,6 +393,8 @@ export const addTaskChecklistStep = asyncHandler(async (req: Request, res: Respo
   const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter });
   if (!task) throw new ApiError(404, 'Task not found');
 
+  ensureTaskModifiable(task);
+
   task.checklist.push({
     stepName,
     isCompleted: false
@@ -307,6 +411,8 @@ export const deleteTaskChecklistStep = asyncHandler(async (req: Request, res: Re
 
   const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter });
   if (!task) throw new ApiError(404, 'Task not found');
+
+  ensureTaskModifiable(task);
 
   const idx = parseInt(stepIndex as string, 10);
   if (isNaN(idx) || idx < 0 || idx >= task.checklist.length) {
@@ -326,6 +432,8 @@ export const addSubtask = asyncHandler(async (req: Request, res: Response) => {
   const scopeFilter = (req as any).scopeFilter || {};
   const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter });
   if (!task) throw new ApiError(404, 'Task not found');
+
+  ensureTaskModifiable(task);
 
   task.subtasks.push({
     title,
@@ -351,6 +459,7 @@ export const updateSubtask = asyncHandler(async (req: Request, res: Response) =>
 
   const subtask = (task.subtasks as any).id(subtaskId);
   if (!subtask) throw new ApiError(404, 'Subtask not found');
+  ensureTaskModifiable(task);
 
   if (status !== undefined) subtask.status = status;
   if (title !== undefined) subtask.title = title;
@@ -372,6 +481,7 @@ export const deleteSubtask = asyncHandler(async (req: Request, res: Response) =>
 
   const subtask = (task.subtasks as any).id(subtaskId);
   if (!subtask) throw new ApiError(404, 'Subtask not found');
+  ensureTaskModifiable(task);
 
   (task.subtasks as any).pull(subtaskId);
   await task.save();
@@ -398,6 +508,8 @@ export const addTaskNote = asyncHandler(async (req: Request, res: Response) => {
   const scopeFilter = (req as any).scopeFilter || {};
   const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter });
   if (!task) throw new ApiError(404, 'Task not found');
+
+  ensureTaskModifiable(task);
 
   const history = await TaskHistory.create({
     tenantId: req.tenantId,

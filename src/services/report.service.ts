@@ -1248,3 +1248,83 @@ export const streamReportExcel = async (
   await worksheet.commit();
   await workbook.commit();
 };
+
+/**
+ * Phase 143: Branch-Wise Financial Sales & Collections Reporting
+ */
+export const getBranchSalesReport = async (
+  tenantId: Types.ObjectId,
+  query: { startDate?: string; endDate?: string } = {}
+) => {
+  const match: Record<string, any> = {
+    tenantId: new Types.ObjectId(tenantId),
+    status: { $nin: ['Draft', 'Cancelled'] }
+  };
+
+  const dateFilter = parseDateFilter(query.startDate, query.endDate);
+  if (dateFilter) {
+    match.date = dateFilter;
+  }
+
+  const branches = await Invoice.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: '$billingEntityId',
+        invoiceCount: { $sum: 1 },
+        totalTaxable: { $sum: { $ifNull: ['$totals.totalTaxable', 0] } },
+        totalGst: { $sum: { $ifNull: ['$totals.totalGst', 0] } },
+        grandTotal: { $sum: { $ifNull: ['$totals.grandTotal', 0] } },
+        amountPaid: { $sum: { $ifNull: ['$totals.amountPaid', 0] } },
+        amountDue: { $sum: { $ifNull: ['$totals.amountDue', 0] } }
+      }
+    },
+    {
+      $lookup: {
+        from: 'billingentities',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'entity'
+      }
+    },
+    {
+      $unwind: {
+        path: '$entity',
+        preserveNullAndEmptyArrays: true
+      }
+    },
+    {
+      $project: {
+        billingEntityId: '$_id',
+        branchName: { $ifNull: ['$entity.branchName', { $ifNull: ['$entity.name', 'Main Office'] }] },
+        legalEntityName: { $ifNull: ['$entity.legalEntityName', { $ifNull: ['$entity.name', 'Primary Firm'] }] },
+        gstin: { $ifNull: ['$entity.gstin', 'N/A'] },
+        stateCode: '$entity.stateCode',
+        invoiceCount: 1,
+        totalTaxable: { $round: ['$totalTaxable', 2] },
+        totalGst: { $round: ['$totalGst', 2] },
+        grandTotal: { $round: ['$grandTotal', 2] },
+        amountPaid: { $round: ['$amountPaid', 2] },
+        amountDue: { $round: ['$amountDue', 2] }
+      }
+    },
+    { $sort: { branchName: 1 } }
+  ]);
+
+  const summary = branches.reduce(
+    (acc: any, b: any) => ({
+      totalInvoices: acc.totalInvoices + b.invoiceCount,
+      totalTaxable: Math.round((acc.totalTaxable + b.totalTaxable) * 100) / 100,
+      totalGst: Math.round((acc.totalGst + b.totalGst) * 100) / 100,
+      grandTotal: Math.round((acc.grandTotal + b.grandTotal) * 100) / 100,
+      amountPaid: Math.round((acc.amountPaid + b.amountPaid) * 100) / 100,
+      amountDue: Math.round((acc.amountDue + b.amountDue) * 100) / 100
+    }),
+    { totalInvoices: 0, totalTaxable: 0, totalGst: 0, grandTotal: 0, amountPaid: 0, amountDue: 0 }
+  );
+
+  return {
+    branches,
+    summary
+  };
+};

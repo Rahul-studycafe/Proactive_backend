@@ -26,6 +26,15 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     const token = authHeader.split(' ')[1];
     const payload = verifyAccessToken(token);
 
+    // Cross-boundary shield: Block client portal tokens from internal practice routes
+    if ((payload as any).isClient || (payload as any).role === 'Client') {
+      throw new ApiError(
+        403,
+        'Client users cannot access internal practice management resources',
+        'FORBIDDEN_CLIENT_ACCESS'
+      );
+    }
+
     // Look up the user — using skipTenantPlugin because we don't have
     // the tenant context set yet at this point
     const user = await User.findById(payload.userId)

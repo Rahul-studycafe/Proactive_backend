@@ -8,6 +8,7 @@ import {
   getReceiptsReport,
   getGstSummaryReportHandler,
   getDebtorsAgingReportHandler,
+  getBranchSalesReportHandler,
   exportReportExcelHandler
 } from '../controllers/report.controller';
 
@@ -27,6 +28,9 @@ router.get('/gst-summary', getGstSummaryReportHandler);
 
 // Phase 114: Debtors Aging Outstandings Report
 router.get('/debtors-aging', getDebtorsAgingReportHandler);
+
+// Phase 143: Branch-Wise Financial Sales Reporting
+router.get('/branch-sales', getBranchSalesReportHandler);
 
 // Phase 115: Streaming Excel Export Engine
 router.get('/:reportType/export', exportReportExcelHandler);

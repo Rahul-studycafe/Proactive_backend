@@ -127,6 +127,13 @@ clientSchema.virtual('tasks', {
   foreignField: 'clientId'
 });
 
+// Virtual for bound Client Portal Users
+clientSchema.virtual('portalUsers', {
+  ref: 'ClientUser',
+  localField: '_id',
+  foreignField: 'clientId'
+});
+
 clientSchema.index({ tenantId: 1, name: 1 });
 clientSchema.index({ tenantId: 1, fileNo: 1 });
 clientSchema.index({ tenantId: 1, entityType: 1 });

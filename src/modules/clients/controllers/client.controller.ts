@@ -4,6 +4,7 @@ import { sendSuccess } from '../../../common/responses/api-response';
 import { ApiError } from '../../../common/errors/api-error';
 import { Client } from '../schemas';
 import { z } from 'zod';
+import { triggerAutoDocumentRequestForService } from '../../../services/document-request.service';
 
 const clientSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -96,8 +97,16 @@ export const getClientById = asyncHandler(async (req: Request, res: Response) =>
     .populate('subscribedServices.serviceId', 'name isRecurring frequency')
     .populate('subscribedServices.customUsers', 'name photoUrl')
     .populate({
+      path: 'subscribedPackages.packageId',
+      select: 'name frequency defaultBillingAmount sacCode gstPercentage serviceIds',
+      populate: {
+        path: 'serviceIds',
+        select: 'name frequency isRecurring'
+      }
+    })
+    .populate({
       path: 'tasks',
-      select: 'serviceId status priority dueDate assigneeIds',
+      select: 'serviceId status priority dueDate targetDate period isBillable billableAmount billingAmount assigneeIds description',
       populate: {
         path: 'serviceId',
         select: 'name'
@@ -112,6 +121,18 @@ export const getClientById = asyncHandler(async (req: Request, res: Response) =>
 export const createClient = asyncHandler(async (req: Request, res: Response) => {
   const data = clientSchema.parse(req.body);
   const client = await Client.create({ tenantId: req.tenantId, ...(data as any) });
+
+  if (client.subscribedServices && client.subscribedServices.length > 0) {
+    for (const sub of client.subscribedServices) {
+      await triggerAutoDocumentRequestForService(
+        req.tenantId!,
+        client._id,
+        sub.serviceId,
+        req.user?._id
+      ).catch(err => console.error('[createClient] Auto doc request error:', err));
+    }
+  }
+
   sendSuccess(res, 201, 'Client created successfully', client);
 });
 
@@ -166,9 +187,16 @@ export const subscribeToPackage = asyncHandler(async (req: Request, res: Respons
   }
 
   // Check if already subscribed to this package
-  const alreadySubscribed = client.subscribedPackages?.some(p => p.packageId.toString() === packageId);
-  if (alreadySubscribed) {
-    throw new ApiError(400, 'Client is already subscribed to this package');
+  const existingPkgIndex = client.subscribedPackages?.findIndex(
+    p => ((p.packageId as any)?._id || p.packageId).toString() === packageId
+  );
+  if (existingPkgIndex !== undefined && existingPkgIndex >= 0) {
+    if (customPrice !== undefined) {
+      client.subscribedPackages[existingPkgIndex].customPrice = customPrice;
+      await client.save();
+      return sendSuccess(res, 200, 'Updated package subscription price successfully', client);
+    }
+    throw new ApiError(400, 'Client is already subscribed to this package', 'ALREADY_SUBSCRIBED');
   }
 
   // Add the package
@@ -186,8 +214,9 @@ export const subscribeToPackage = asyncHandler(async (req: Request, res: Respons
     client.subscribedServices = [];
   }
 
-  const existingServiceIds = client.subscribedServices.map(s => s.serviceId.toString());
+  const existingServiceIds = client.subscribedServices.map(s => ((s.serviceId as any)?._id || s.serviceId).toString());
   
+  const newServiceIds: any[] = [];
   for (const sId of pkg.serviceIds) {
     if (!existingServiceIds.includes(sId.toString())) {
       client.subscribedServices.push({
@@ -195,10 +224,21 @@ export const subscribeToPackage = asyncHandler(async (req: Request, res: Respons
         customUsers: [],
         subscribedAt: new Date()
       });
+      newServiceIds.push(sId);
     }
   }
 
   await client.save();
+
+  // Trigger auto doc requests for newly subscribed services in package
+  for (const sId of newServiceIds) {
+    await triggerAutoDocumentRequestForService(
+      req.tenantId!,
+      client._id,
+      sId,
+      req.user?._id
+    ).catch(err => console.error('[subscribeToPackage] Auto doc request error:', err));
+  }
 
   return sendSuccess(res, 200, 'Subscribed to package successfully', client);
 });
@@ -221,9 +261,16 @@ export const subscribeToService = asyncHandler(async (req: Request, res: Respons
   }
 
   // Check if already subscribed to this service
-  const alreadySubscribed = client.subscribedServices?.some(s => s.serviceId.toString() === serviceId);
-  if (alreadySubscribed) {
-    throw new ApiError(400, 'Client is already subscribed to this service');
+  const existingSvcIndex = client.subscribedServices?.findIndex(
+    s => ((s.serviceId as any)?._id || s.serviceId).toString() === serviceId
+  );
+  if (existingSvcIndex !== undefined && existingSvcIndex >= 0) {
+    if (customPrice !== undefined) {
+      client.subscribedServices[existingSvcIndex].customPrice = customPrice;
+      await client.save();
+      return sendSuccess(res, 200, 'Updated service subscription price successfully', client);
+    }
+    throw new ApiError(400, 'Client is already subscribed to this service', 'ALREADY_SUBSCRIBED');
   }
 
   if (!client.subscribedServices) {
@@ -239,5 +286,45 @@ export const subscribeToService = asyncHandler(async (req: Request, res: Respons
 
   await client.save();
 
+  // Trigger Auto Document Request if enabled on this service
+  if (svc.autoDocCollection?.isEnabled) {
+    await triggerAutoDocumentRequestForService(
+      req.tenantId!,
+      client._id,
+      svc._id,
+      req.user?._id
+    ).catch(err => console.error('[subscribeToService] Auto doc request error:', err));
+  }
+
   return sendSuccess(res, 200, 'Subscribed to service successfully', client);
+});
+
+export const unsubscribeFromPackage = asyncHandler(async (req: Request, res: Response) => {
+  const { packageId } = req.params;
+  const client = await Client.findOne({ _id: req.params.id, tenantId: req.tenantId });
+  if (!client) throw new ApiError(404, 'Client not found');
+
+  if (client.subscribedPackages) {
+    client.subscribedPackages = client.subscribedPackages.filter(
+      p => p.packageId.toString() !== packageId && (p as any)._id?.toString() !== packageId
+    );
+    await client.save();
+  }
+
+  return sendSuccess(res, 200, 'Unsubscribed from package successfully', client);
+});
+
+export const unsubscribeFromService = asyncHandler(async (req: Request, res: Response) => {
+  const { serviceId } = req.params;
+  const client = await Client.findOne({ _id: req.params.id, tenantId: req.tenantId });
+  if (!client) throw new ApiError(404, 'Client not found');
+
+  if (client.subscribedServices) {
+    client.subscribedServices = client.subscribedServices.filter(
+      s => s.serviceId.toString() !== serviceId && (s as any)._id?.toString() !== serviceId
+    );
+    await client.save();
+  }
+
+  return sendSuccess(res, 200, 'Unsubscribed from service successfully', client);
 });

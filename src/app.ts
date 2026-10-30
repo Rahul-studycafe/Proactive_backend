@@ -1,6 +1,7 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import path from 'path';
 import { errorHandler } from './middlewares/error-handler';
 import { authenticate } from './middlewares/authenticate';
 import { asyncHandler } from './utils/async-handler';
@@ -39,6 +40,8 @@ import quotationRoutes from './routes/quotation.routes';
 import reportRoutes from './routes/report.routes';
 import notificationRoutes from './routes/notification.routes';
 import accountingRoutes from './routes/accounting.routes';
+import portalRoutes from './routes/portal.routes';
+import clientPaymentRoutes from './routes/client-payment.routes';
 
 const app: Express = express();
 
@@ -46,12 +49,41 @@ const app: Express = express();
 app.set('trust proxy', 1);
 
 // Middleware
-app.use(helmet({ crossOriginResourcePolicy: false })); // allow images to be loaded
+// Configure Helmet: disable frameguard & CSP restriction so Next.js apps (port 8080 & 3005) can embed previews
+app.use(
+  helmet({
+    crossOriginResourcePolicy: false,
+    crossOriginEmbedderPolicy: false,
+    frameguard: false,
+    contentSecurityPolicy: false,
+  })
+);
 app.use(cors({
-  origin: [process.env.FRONTEND_URL || 'http://localhost:8080', 'http://localhost:3000'],
+  origin: [
+    process.env.FRONTEND_URL || 'http://localhost:8080',
+    process.env.FRONTEND_APP_URL || 'http://localhost:8080',
+    process.env.PORTAL_URL || 'http://localhost:3005',
+    'http://localhost:8080',
+    'http://localhost:3005',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:8080',
+    'http://127.0.0.1:3005',
+    'http://127.0.0.1:3000',
+  ],
   credentials: true,
 }));
-app.use('/public', express.static('public'));
+// Static directories for file uploads and public documents
+const staticOptions = {
+  setHeaders: (res: Response) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  },
+};
+
+app.use('/public', express.static(path.join(process.cwd(), 'public'), staticOptions));
+app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads'), staticOptions));
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), staticOptions));
 app.use((req, res, next) => {
   console.log(`[HTTP Request] ${req.method} ${req.url}`);
   next();
@@ -82,6 +114,10 @@ app.use('/api/v1/payment', paymentRoutes);
 app.use('/api/v1/health', healthRoutes);
 app.use('/api/v1/public/document-requests', publicDocumentRequestRoutes);
 
+// Client Portal routes (has its own public auth endpoints + clientAuthenticate middleware)
+app.use('/api/v1/portal', portalRoutes);
+app.use('/api/v1/client-payments', clientPaymentRoutes);
+
 // ─── Protected Routes (auth required, tenant-scoped) ────────────
 // All routes below this line require a valid JWT.
 // The authenticate middleware extracts tenantId from the token
@@ -104,6 +140,7 @@ app.use('/api/v1/ledger', ledgerRoutes);
 app.use('/api/v1/dashboard', dashboardRoutes);
 app.use('/api/v1/holidays', holidayRoutes);
 app.use('/api/v1/tenant-settings', tenantSettingsRoutes);
+app.use('/api/v1/tenant', tenantSettingsRoutes);
 app.use('/api/v1/attendance', attendanceRoutes);
 app.use('/api/v1/automation', automationRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);

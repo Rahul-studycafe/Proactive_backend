@@ -127,3 +127,73 @@ export const createBillingEntity = asyncHandler(async (req: Request, res: Respon
   });
   return sendSuccess(res, 201, 'Billing entity created successfully', entity);
 });
+
+export const updateBillingEntity = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.tenantId) {
+    throw new ApiError(403, 'Tenant context missing', 'FORBIDDEN');
+  }
+
+  const { BillingEntity } = await import('../modules/masters/schemas');
+  const entity = await BillingEntity.findOneAndUpdate(
+    { _id: req.params.id, tenantId: req.tenantId },
+    { $set: req.body },
+    { new: true, runValidators: true }
+  );
+
+  if (!entity) {
+    throw new ApiError(404, 'Billing entity not found');
+  }
+
+  return sendSuccess(res, 200, 'Billing entity updated successfully', entity);
+});
+
+export const deleteBillingEntity = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.tenantId) {
+    throw new ApiError(403, 'Tenant context missing', 'FORBIDDEN');
+  }
+
+  const { BillingEntity } = await import('../modules/masters/schemas');
+  const entity = await BillingEntity.findOneAndDelete({ _id: req.params.id, tenantId: req.tenantId });
+
+  if (!entity) {
+    throw new ApiError(404, 'Billing entity not found');
+  }
+
+  return sendSuccess(res, 200, 'Billing entity deleted successfully', { id: req.params.id });
+});
+
+// ─── Phase 144 & 145: SaaS Subscription & Usage ──────────────────
+export const getTenantUsage = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.tenantId) {
+    throw new ApiError(403, 'Tenant context missing', 'FORBIDDEN');
+  }
+
+  const { TenantRenewalService } = await import('../services/tenant-renewal.service');
+  const usage = await TenantRenewalService.getTenantUsage(req.tenantId as any);
+  return sendSuccess(res, 200, 'Tenant usage metrics retrieved successfully', usage);
+});
+
+export const getTenantSubscription = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.tenantId) {
+    throw new ApiError(403, 'Tenant context missing', 'FORBIDDEN');
+  }
+
+  const { TenantSubscription } = await import('../models/TenantSubscription');
+  const subscription = await TenantSubscription.findOne({ tenantId: req.tenantId });
+  return sendSuccess(res, 200, 'Tenant subscription retrieved successfully', subscription);
+});
+
+export const upsertTenantSubscription = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.tenantId) {
+    throw new ApiError(403, 'Tenant context missing', 'FORBIDDEN');
+  }
+
+  const { TenantSubscription } = await import('../models/TenantSubscription');
+  const subscription = await TenantSubscription.findOneAndUpdate(
+    { tenantId: req.tenantId },
+    { $set: { ...req.body, tenantId: req.tenantId } },
+    { new: true, upsert: true, runValidators: true }
+  );
+
+  return sendSuccess(res, 200, 'Tenant subscription updated successfully', subscription);
+});

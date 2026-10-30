@@ -85,6 +85,8 @@ describe('Phase 34-39: Task Management APIs', () => {
     });
     const savedService = await service.save();
     serviceId = savedService._id.toString();
+    savedClient.subscribedServices = [{ serviceId: savedService._id } as any];
+    await savedClient.save();
   });
 
   afterAll(async () => {

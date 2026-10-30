@@ -14,6 +14,8 @@ import { TaskHistory } from '../models/TaskHistory';
 import { Task } from '../models/Task';
 import { Client } from '../modules/clients/schemas/client.schema';
 import { Organization } from '../modules/auth/schemas/organization.schema';
+import { User } from '../modules/auth/schemas/user.schema';
+import { Service } from '../modules/services/schemas/service.schema';
 import { ApiError } from '../common/errors/api-error';
 import { getNextDocumentRequestNumber } from './sequence.service';
 import { sendDocumentRequestEmail } from './email.service';
@@ -632,4 +634,65 @@ export const scanExpiredDocumentRequestsService = async (
     referenceDate,
     updatedExpiredCount: result.modifiedCount
   };
+};
+
+/**
+ * Triggers an automated document request for a client when a service is subscribed or executed,
+ * provided the service has autoDocCollection.isEnabled === true.
+ */
+export const triggerAutoDocumentRequestForService = async (
+  tenantId: mongoose.Types.ObjectId,
+  clientId: string | mongoose.Types.ObjectId,
+  serviceId: string | mongoose.Types.ObjectId,
+  userId?: mongoose.Types.ObjectId,
+  taskId?: string | mongoose.Types.ObjectId
+) => {
+  try {
+    const svc = await Service.findOne({ _id: serviceId, tenantId });
+    if (!svc || !svc.autoDocCollection?.isEnabled) {
+      return null;
+    }
+
+    let creatorId = userId;
+    if (!creatorId) {
+      const fallbackUser = await User.findOne({ tenantId, isActive: true });
+      if (fallbackUser) {
+        creatorId = fallbackUser._id;
+      } else {
+        const anyUser = await User.findOne({ tenantId });
+        creatorId = anyUser?._id;
+      }
+    }
+
+    if (!creatorId) {
+      console.warn('[triggerAutoDocumentRequestForService] No creator user found for tenant:', tenantId);
+      return null;
+    }
+
+    const defaultMsg =
+      svc.autoDocCollection.defaultMessage?.trim() ||
+      `Please provide the required documents for ${svc.name}.`;
+
+    return await createDocumentRequestService(
+      tenantId,
+      {
+        clientId: clientId.toString(),
+        taskId: taskId ? taskId.toString() : undefined,
+        title: `Document Request: ${svc.name}`,
+        instructions: defaultMsg,
+        expiresInDays: 7,
+        items: [
+          {
+            name: `${svc.name} Required Documents`,
+            description: defaultMsg,
+            isRequired: true
+          }
+        ]
+      },
+      creatorId
+    );
+  } catch (err) {
+    console.error('[triggerAutoDocumentRequestForService] Error creating automated document request:', err);
+    return null;
+  }
 };

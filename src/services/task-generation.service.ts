@@ -5,6 +5,7 @@ import { Package, IPackage } from '../modules/services/schemas/package.schema';
 import { Client, IClient } from '../modules/clients/schemas/client.schema';
 import { Organization } from '../modules/auth/schemas';
 import { AutomationLog, IAutomationLogDetail } from '../models/AutomationLog';
+import { triggerAutoDocumentRequestForService } from './document-request.service';
 import {
   calculatePeriodString,
   calculateDueDate,
@@ -168,11 +169,22 @@ export const generateTaskForClientService = async (
       customFieldValues,
       isBillable: service.isBillable ?? true,
       billingAmount,
+      billableAmount: billingAmount,
       docCollectionRequest: service.autoDocCollection?.isEnabled || false,
       docCollectionMessage:
         service.autoDocCollection?.defaultMessage ||
         'Please provide the required compliance documents.'
     });
+
+    if (task.docCollectionRequest) {
+      await triggerAutoDocumentRequestForService(
+        tenantId,
+        clientId,
+        serviceId,
+        undefined,
+        task._id
+      ).catch(err => console.error('[task-generation] Failed to trigger auto doc request:', err));
+    }
 
     return {
       status: 'Created',

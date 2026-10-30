@@ -12,6 +12,7 @@ import {
   getReceiptReport,
   getGstSummaryReport,
   getDebtorsAgingReport,
+  getBranchSalesReport,
   streamReportExcel
 } from '../services/report.service';
 
@@ -132,4 +133,16 @@ export const exportReportExcelHandler = asyncHandler(async (req: Request, res: R
     req.query,
     res
   );
+});
+
+/**
+ * Phase 143: Branch-Wise Financial Sales Report Handler
+ */
+export const getBranchSalesReportHandler = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.tenantId) {
+    throw new ApiError(403, 'Tenant context missing', 'FORBIDDEN');
+  }
+
+  const report = await getBranchSalesReport(req.tenantId as Types.ObjectId, req.query);
+  return sendSuccess(res, 200, 'Branch sales report retrieved successfully', report);
 });

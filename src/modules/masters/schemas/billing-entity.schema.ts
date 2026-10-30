@@ -4,11 +4,16 @@ import { tenantPlugin } from '../../../common/plugins/tenant.plugin';
 export interface IBillingEntity extends Document {
   tenantId: mongoose.Types.ObjectId;
   name: string;
+  branchName?: string;
+  legalEntityName?: string;
   entityName?: string;
   tradeName?: string;
   gstin?: string;
   pan?: string;
   cin?: string;
+  stateCode?: string;
+  contactEmail?: string;
+  contactPhone?: string;
   address?: {
     addressLine1?: string;
     addressLine2?: string;
@@ -22,6 +27,7 @@ export interface IBillingEntity extends Document {
     accountNumber?: string;
     ifsc?: string;
     branch?: string;
+    upiId?: string;
   };
   upiId?: string;
   logoUrl?: string;
@@ -33,6 +39,7 @@ export interface IBillingEntity extends Document {
   receiptNextNumber: number;
   termsAndConditions?: string;
   isDefault?: boolean;
+  isActive?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -46,11 +53,16 @@ const billingEntitySchema = new Schema<IBillingEntity>(
       index: true
     },
     name: { type: String, required: true },
+    branchName: { type: String, trim: true },
+    legalEntityName: { type: String, trim: true },
     entityName: { type: String },
     tradeName: { type: String },
     gstin: { type: String },
     pan: { type: String },
     cin: { type: String },
+    stateCode: { type: String, trim: true },
+    contactEmail: { type: String, trim: true },
+    contactPhone: { type: String, trim: true },
     address: {
       addressLine1: { type: String },
       addressLine2: { type: String },
@@ -63,25 +75,33 @@ const billingEntitySchema = new Schema<IBillingEntity>(
       bankName: { type: String },
       accountNumber: { type: String },
       ifsc: { type: String },
-      branch: { type: String }
+      branch: { type: String },
+      upiId: { type: String }
     },
     upiId: { type: String },
     logoUrl: { type: String },
     signatureUrl: { type: String },
     signatoryUrl: { type: String },
     invoicePrefix: { type: String, default: 'INV/' },
-    invoiceNextNumber: { type: Number, default: 1 },
+    invoiceNextNumber: { type: Number, default: 0 },
     receiptPrefix: { type: String, default: 'RCT/' },
-    receiptNextNumber: { type: Number, default: 1 },
+    receiptNextNumber: { type: Number, default: 0 },
     termsAndConditions: { type: String },
-    isDefault: { type: Boolean, default: false }
+    isDefault: { type: Boolean, default: false },
+    isActive: { type: Boolean, default: true }
   },
   { timestamps: true }
 );
 
 billingEntitySchema.pre('validate', async function () {
+  if (this.branchName && !this.name) {
+    this.name = this.branchName;
+  }
   if (this.entityName && !this.name) {
     this.name = this.entityName;
+  }
+  if (this.legalEntityName && !this.entityName) {
+    this.entityName = this.legalEntityName;
   }
   if (!this.name) {
     const Organization = mongoose.model('Organization');
@@ -98,12 +118,16 @@ billingEntitySchema.pre('validate', async function () {
   if (this.name && !this.entityName) {
     this.entityName = this.name;
   }
+  if (this.name && !this.branchName) {
+    this.branchName = this.name;
+  }
   if (this.signatureUrl && !this.signatoryUrl) {
     this.signatoryUrl = this.signatureUrl;
   }
 });
 
 billingEntitySchema.index({ tenantId: 1, name: 1 });
+billingEntitySchema.index({ tenantId: 1, branchName: 1 });
 billingEntitySchema.plugin(tenantPlugin);
 
 export const BillingEntity = mongoose.model<IBillingEntity>(

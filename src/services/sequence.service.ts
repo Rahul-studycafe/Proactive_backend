@@ -4,23 +4,42 @@ import { Organization } from '../modules/auth/schemas';
 /**
  * Atomically increments and fetches the next invoice number for a tenant.
  * Uses findOneAndUpdate to prevent race conditions when multiple invoices are generated concurrently.
+ * Supports branch-isolated sequences per BillingEntity (Phase 142).
  * 
  * @param tenantId The organization's ObjectId
  * @param prefix Optional prefix (default: 'INV-')
- * @returns Formatted sequence string (e.g. 'INV-001')
+ * @param session Optional Mongoose ClientSession for transactions
+ * @param billingEntityId Optional branch/entity ID for isolated numbering
+ * @returns Formatted sequence string (e.g. 'INV-001' or 'INV-MUM-001')
  */
 export const getNextInvoiceNumber = async (
   tenantId: mongoose.Types.ObjectId,
   prefix: string = 'INV-',
-  session?: mongoose.ClientSession
+  session?: mongoose.ClientSession,
+  billingEntityId?: mongoose.Types.ObjectId
 ): Promise<string> => {
-  const options: mongoose.QueryOptions = { new: true, select: 'lastInvoiceNumber' };
+  const options: mongoose.QueryOptions = { new: true };
   if (session) options.session = session;
+
+  if (billingEntityId) {
+    const { BillingEntity } = await import('../modules/masters/schemas/billing-entity.schema');
+    const entity = await BillingEntity.findOneAndUpdate(
+      { _id: billingEntityId, tenantId },
+      { $inc: { invoiceNextNumber: 1 } },
+      options
+    );
+
+    if (entity) {
+      const pfx = prefix !== 'INV-' ? prefix : (entity.invoicePrefix || prefix);
+      const numberPart = (entity.invoiceNextNumber || 1).toString().padStart(3, '0');
+      return `${pfx}${numberPart}`;
+    }
+  }
 
   const org = await Organization.findOneAndUpdate(
     { _id: tenantId },
     { $inc: { lastInvoiceNumber: 1 } },
-    options
+    { ...options, select: 'lastInvoiceNumber' }
   );
 
   if (!org) {
@@ -35,24 +54,42 @@ export const getNextInvoiceNumber = async (
 /**
  * Atomically increments and fetches the next receipt number for a tenant.
  * Supports session for MongoDB multi-document ACID transactions.
+ * Supports branch-isolated sequences per BillingEntity (Phase 142).
  * 
  * @param tenantId The organization's ObjectId
  * @param prefix Optional prefix (default: 'RCT-')
  * @param session Optional Mongoose ClientSession for transactions
- * @returns Formatted sequence string (e.g. 'RCT-001')
+ * @param billingEntityId Optional branch/entity ID for isolated numbering
+ * @returns Formatted sequence string (e.g. 'RCT-001' or 'RCT-MUM-001')
  */
 export const getNextReceiptNumber = async (
   tenantId: mongoose.Types.ObjectId,
   prefix: string = 'RCT-',
-  session?: mongoose.ClientSession
+  session?: mongoose.ClientSession,
+  billingEntityId?: mongoose.Types.ObjectId
 ): Promise<string> => {
-  const options: mongoose.QueryOptions = { new: true, select: 'lastReceiptNumber' };
+  const options: mongoose.QueryOptions = { new: true };
   if (session) options.session = session;
+
+  if (billingEntityId) {
+    const { BillingEntity } = await import('../modules/masters/schemas/billing-entity.schema');
+    const entity = await BillingEntity.findOneAndUpdate(
+      { _id: billingEntityId, tenantId },
+      { $inc: { receiptNextNumber: 1 } },
+      options
+    );
+
+    if (entity) {
+      const pfx = prefix !== 'RCT-' ? prefix : (entity.receiptPrefix || prefix);
+      const numberPart = (entity.receiptNextNumber || 1).toString().padStart(3, '0');
+      return `${pfx}${numberPart}`;
+    }
+  }
 
   const org = await Organization.findOneAndUpdate(
     { _id: tenantId },
     { $inc: { lastReceiptNumber: 1 } },
-    options
+    { ...options, select: 'lastReceiptNumber' }
   );
 
   if (!org) {
@@ -191,7 +228,3 @@ export const getNextQuotationNumber = async (
   const numberPart = (org.lastQuotationNumber || 1).toString().padStart(3, '0');
   return `${prefix}${numberPart}`;
 };
-
-
-
-
