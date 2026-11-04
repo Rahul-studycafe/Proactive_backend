@@ -5,8 +5,10 @@ import { ApiError } from '../utils/ApiError';
 import { Invoice } from '../models/Invoice';
 import { Task } from '../models/Task';
 import { Expense } from '../models/Expense';
+import { Receipt } from '../models/Receipt';
 import { ExpenseService } from '../services/expense.service';
 import { getNextInvoiceNumber } from '../services/sequence.service';
+import { applyAdvanceToInvoiceService } from '../services/receipt.service';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 
@@ -302,4 +304,52 @@ export const cancelInvoice = asyncHandler(async (req: Request, res: Response) =>
   }
 
   sendSuccess(res, 200, 'Invoice cancelled', invoice);
+});
+
+export const getInvoiceAvailableAdvance = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const invoice = await Invoice.findOne({ _id: id, tenantId: req.tenantId });
+  if (!invoice) {
+    throw new ApiError(404, 'Invoice not found');
+  }
+
+  const receipts = await Receipt.find({
+    tenantId: req.tenantId,
+    clientId: invoice.clientId,
+    unallocatedAmount: { $gt: 0 }
+  }).sort({ date: 1 });
+
+  const totalAdvanceAvailable = receipts.reduce(
+    (sum, r) => sum + (r.unallocatedAmount || 0),
+    0
+  );
+
+  sendSuccess(res, 200, 'Available advance retrieved', {
+    invoiceId: invoice._id,
+    invoiceNo: invoice.invoiceNo,
+    amountDue: invoice.totals?.amountDue || 0,
+    totalAdvanceAvailable,
+    receipts: receipts.map(r => ({
+      _id: r._id,
+      receiptNo: r.receiptNo,
+      date: r.date,
+      unallocatedAmount: r.unallocatedAmount,
+      totalAmount: r.totalAmount
+    }))
+  });
+});
+
+export const applyAdvanceToInvoice = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { specificReceiptId, amount } = req.body || {};
+
+  const result = await applyAdvanceToInvoiceService(
+    req.tenantId!,
+    id as string,
+    undefined,
+    specificReceiptId,
+    amount
+  );
+
+  sendSuccess(res, 200, 'Advance credit applied to invoice successfully', result);
 });

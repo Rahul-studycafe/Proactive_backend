@@ -10,9 +10,11 @@ import { DocumentModel } from '../models/Document';
 import { DocumentRequest } from '../models/DocumentRequest';
 import { Invoice } from '../models/Invoice';
 import { Receipt } from '../models/Receipt';
+import { Expense } from '../models/Expense';
 import { calculateClientLedger } from '../services/ledger.service';
 import { ClientQueryTicket } from '../models/ClientQueryTicket';
 import { Client } from '../modules/clients/schemas/client.schema';
+import { applyAdvanceToInvoiceService } from '../services/receipt.service';
 
 // ─── Phase 126: Compliance Calendar & Milestones ──────────────────
 export const getComplianceCalendar = asyncHandler(
@@ -231,6 +233,51 @@ export const getPortalInvoicePdf = asyncHandler(
     }
 
     sendSuccess(res, 200, 'Invoice details retrieved successfully', invoice);
+  }
+);
+
+export const applyAdvanceToPortalInvoice = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { amount } = req.body || {};
+
+    const result = await applyAdvanceToInvoiceService(
+      req.tenantId!,
+      id as string,
+      req.clientId,
+      undefined,
+      amount
+    );
+
+    sendSuccess(res, 200, 'Advance applied and invoice settled successfully', result);
+  }
+);
+
+export const getPortalOutlays = asyncHandler(
+  async (req: Request, res: Response) => {
+    const expenses = await Expense.find({
+      tenantId: req.tenantId,
+      clientId: req.clientId
+    })
+      .populate('invoiceId', 'invoiceNo totals status')
+      .sort({ date: -1, createdAt: -1 });
+
+    const formatted = expenses.map((exp: any) => ({
+      _id: exp._id,
+      expenseNo: exp.expenseNo,
+      date: exp.date,
+      categoryName: exp.categoryName,
+      amount: exp.amount,
+      paymentMode: exp.paymentMode,
+      isBilled: exp.isBilled,
+      billedInvoiceNo: exp.invoiceId?.invoiceNo || null,
+      invoiceId: exp.invoiceId?._id || null,
+      notes: exp.notes || (exp as any).particulars,
+      receiptUrl: exp.receiptUrl,
+      receiptOriginalName: exp.receiptOriginalName
+    }));
+
+    sendSuccess(res, 200, 'Reimbursable outlays retrieved successfully', formatted);
   }
 );
 

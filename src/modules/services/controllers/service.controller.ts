@@ -3,7 +3,10 @@ import { asyncHandler } from '../../../utils/async-handler';
 import { sendSuccess } from '../../../common/responses/api-response';
 import { ApiError } from '../../../common/errors/api-error';
 import { Service } from '../schemas';
+import { Package } from '../schemas/package.schema';
 import { Client } from '../../clients/schemas/client.schema';
+import '../../auth/schemas/user.schema';
+import { Task } from '../../../models/Task';
 import { z } from 'zod';
 
 const serviceSchema = z.object({
@@ -107,11 +110,112 @@ export const updateService = asyncHandler(async (req: Request, res: Response) =>
 });
 
 export const deleteService = asyncHandler(async (req: Request, res: Response) => {
-  const service = await Service.findOneAndUpdate(
-    { _id: req.params.id, tenantId: req.tenantId },
-    { isEnabled: false },
-    { new: true }
-  );
+  const service = await Service.findOne({ _id: req.params.id, tenantId: req.tenantId });
   if (!service) throw new ApiError(404, 'Service not found');
-  sendSuccess(res, 200, 'Service disabled successfully', service);
+
+  const { force } = req.query;
+
+  // Check if any client is currently subscribed to this service
+  const clientCount = await Client.countDocuments({
+    tenantId: req.tenantId,
+    'subscribedServices.serviceId': service._id
+  });
+
+  // Check if any tasks are linked to this service
+  const taskCount = await Task.countDocuments({
+    tenantId: req.tenantId,
+    serviceId: service._id
+  });
+
+  if (force === 'true') {
+    // If forced, clean up client subscriptions and remove service
+    await Client.updateMany(
+      { tenantId: req.tenantId, 'subscribedServices.serviceId': service._id },
+      { $pull: { subscribedServices: { serviceId: service._id } } }
+    );
+    await Service.deleteOne({ _id: service._id, tenantId: req.tenantId });
+    return sendSuccess(res, 200, 'Service deleted and removed from client subscriptions');
+  }
+
+  if (clientCount > 0) {
+    throw new ApiError(
+      400,
+      `Cannot delete '${service.name}' because ${clientCount} client(s) are actively subscribed to it. You can disable the service to prevent new subscriptions, or remove it from the client(s) first.`
+    );
+  }
+
+  if (taskCount > 0) {
+    throw new ApiError(
+      400,
+      `Cannot delete '${service.name}' because ${taskCount} task(s) are linked to it. Disable the service instead to preserve compliance audit trail.`
+    );
+  }
+
+  await Service.deleteOne({ _id: service._id, tenantId: req.tenantId });
+  sendSuccess(res, 200, 'Service blueprint deleted permanently');
+});
+
+export const getServiceClients = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const tenantId = req.tenantId;
+
+  const service = await Service.findOne({ _id: id, tenantId });
+  if (!service) throw new ApiError(404, 'Service not found');
+
+  // Find any packages containing this service
+  const packages = await Package.find({ tenantId, serviceIds: service._id }).select('_id name');
+  const packageIds = packages.map(p => p._id);
+
+  // Find all clients subscribed directly or via a package
+  const clients = await Client.find({
+    tenantId,
+    $or: [
+      { 'subscribedServices.serviceId': service._id },
+      { 'subscribedPackages.packageId': { $in: packageIds } }
+    ]
+  })
+    .select('name fileNo entityType email mobile pan gstin isActive subscribedServices subscribedPackages assignedUsers createdAt')
+    .populate('assignedUsers', 'name photoUrl')
+    .sort({ name: 1 })
+    .lean();
+
+  const clientIds = clients.map(c => c._id);
+  const taskCounts = await Task.aggregate([
+    { $match: { tenantId, serviceId: service._id, clientId: { $in: clientIds } } },
+    { $group: { _id: '$clientId', total: { $sum: 1 }, pending: { $sum: { $cond: [{ $in: ['$status', ['Pending', 'In Progress', 'Review']] }, 1, 0] } } } }
+  ]);
+  const taskCountMap = new Map();
+  taskCounts.forEach(t => taskCountMap.set(t._id.toString(), t));
+
+  const result = clients.map(c => {
+    const directSub = (c.subscribedServices || []).find(
+      (s: any) => s.serviceId?.toString() === service._id.toString()
+    );
+    const viaPkg = (c.subscribedPackages || []).find(
+      (p: any) => packageIds.some(pkgId => pkgId.toString() === p.packageId?.toString())
+    );
+
+    const taskStats = taskCountMap.get(c._id.toString()) || { total: 0, pending: 0 };
+
+    return {
+      _id: c._id,
+      name: c.name,
+      fileNo: c.fileNo,
+      entityType: c.entityType,
+      email: c.email,
+      mobile: c.mobile,
+      pan: c.pan,
+      gstin: c.gstin,
+      isActive: c.isActive,
+      customPrice: directSub?.customPrice ?? null,
+      effectivePrice: directSub?.customPrice ?? service.defaultBillingRate ?? 0,
+      subscribedAt: directSub?.subscribedAt || (c as any).createdAt,
+      subscriptionSource: directSub ? 'Direct Retainer' : viaPkg ? 'Commercial Package' : 'Direct Retainer',
+      assignedUsers: c.assignedUsers || [],
+      totalTasks: taskStats.total,
+      pendingTasks: taskStats.pending
+    };
+  });
+
+  sendSuccess(res, 200, 'Subscribed clients retrieved successfully', result);
 });

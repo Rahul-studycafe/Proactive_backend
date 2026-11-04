@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { Receipt, IReceiptSettlement } from '../models/Receipt';
 import { Invoice } from '../models/Invoice';
+import { CreditNote } from '../models/CreditNote';
 import { getNextReceiptNumber } from './sequence.service';
 import { ApiError } from '../common/errors/api-error';
 
@@ -163,11 +164,22 @@ export const createReceiptWithTransaction = async (
         );
       }
 
+      // Factor in applied credit notes
+      const creditNotes = await CreditNote.find({
+        tenantId,
+        invoiceId: invoice._id,
+        status: { $ne: 'Cancelled' }
+      });
+      const totalCreditApplied = creditNotes.reduce(
+        (sum, cn) => sum + (cn.creditAppliedToInvoice || cn.totals?.grandTotal || 0),
+        0
+      );
+
       invoice.totals.amountPaid =
         Math.round((invoice.totals.amountPaid + item.settledAmount) * 100) / 100;
       invoice.totals.amountDue = Math.max(
         0,
-        Math.round((invoice.totals.grandTotal - invoice.totals.amountPaid) * 100) / 100
+        Math.round((invoice.totals.grandTotal - invoice.totals.amountPaid - totalCreditApplied) * 100) / 100
       );
 
       invoice.status = invoice.totals.amountDue <= 0 ? 'Paid' : 'Partially Paid';
@@ -202,6 +214,111 @@ export const createReceiptWithTransaction = async (
     return receipt;
   } catch (error) {
     // Abort transaction on any failure to guarantee ACID rollback
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
+};
+
+/**
+ * Applies unallocated advance receipts towards an unpaid/partially-paid invoice.
+ */
+export const applyAdvanceToInvoiceService = async (
+  tenantId: mongoose.Types.ObjectId,
+  invoiceId: string,
+  clientId?: mongoose.Types.ObjectId,
+  specificReceiptId?: string,
+  amountToApply?: number
+) => {
+  const query: any = { _id: invoiceId, tenantId };
+  if (clientId) {
+    query.clientId = clientId;
+  }
+  const invoice = await Invoice.findOne(query);
+  if (!invoice) {
+    throw new ApiError(404, 'Invoice not found');
+  }
+
+  if (invoice.totals.amountDue <= 0 || invoice.status === 'Paid') {
+    throw new ApiError(400, 'Invoice is already settled');
+  }
+
+  // Find unallocated advance receipts for this client
+  const receiptQuery: any = {
+    tenantId,
+    clientId: invoice.clientId,
+    unallocatedAmount: { $gt: 0 }
+  };
+  if (specificReceiptId) {
+    receiptQuery._id = specificReceiptId;
+  }
+
+  const advanceReceipts = await Receipt.find(receiptQuery).sort({ date: 1, createdAt: 1 });
+  const totalAdvanceAvailable = advanceReceipts.reduce(
+    (sum, r) => sum + (r.unallocatedAmount || 0),
+    0
+  );
+
+  if (totalAdvanceAvailable <= 0) {
+    throw new ApiError(400, 'No unallocated advance payments available for this client');
+  }
+
+  let remainingDue = invoice.totals.amountDue;
+  if (amountToApply && amountToApply > 0) {
+    remainingDue = Math.min(remainingDue, amountToApply);
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    let totalSettledFromAdvance = 0;
+
+    for (const receipt of advanceReceipts) {
+      if (remainingDue <= 0) break;
+
+      const allocate = Math.min(receipt.unallocatedAmount, remainingDue);
+      if (allocate > 0) {
+        receipt.unallocatedAmount = Math.round((receipt.unallocatedAmount - allocate) * 100) / 100;
+        receipt.settlements.push({
+          invoiceId: invoice._id as mongoose.Types.ObjectId,
+          settledAmount: allocate
+        });
+        await receipt.save({ session });
+
+        remainingDue -= allocate;
+        totalSettledFromAdvance += allocate;
+      }
+    }
+
+    // Factor in applied credit notes
+    const creditNotes = await CreditNote.find({
+      tenantId,
+      invoiceId: invoice._id,
+      status: { $ne: 'Cancelled' }
+    });
+    const totalCreditApplied = creditNotes.reduce(
+      (sum, cn) => sum + (cn.creditAppliedToInvoice || cn.totals?.grandTotal || 0),
+      0
+    );
+
+    invoice.totals.amountPaid = Math.round(((invoice.totals.amountPaid || 0) + totalSettledFromAdvance) * 100) / 100;
+    invoice.totals.amountDue = Math.max(
+      0,
+      Math.round((invoice.totals.grandTotal - invoice.totals.amountPaid - totalCreditApplied) * 100) / 100
+    );
+    invoice.status = invoice.totals.amountDue <= 0 ? 'Paid' : 'Partially Paid';
+    await invoice.save({ session });
+
+    await session.commitTransaction();
+
+    return {
+      invoice,
+      settledAmount: totalSettledFromAdvance,
+      remainingAdvance: totalAdvanceAvailable - totalSettledFromAdvance
+    };
+  } catch (error) {
     await session.abortTransaction();
     throw error;
   } finally {

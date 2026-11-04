@@ -1,5 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 import { tenantPlugin } from '../common/plugins/tenant.plugin';
+import './Task';
+import './Expense';
 
 export interface IInvoiceItem {
   referenceType: 'Task' | 'Expense' | 'Manual';

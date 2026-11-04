@@ -2,8 +2,7 @@ import { Request, Response } from 'express';
 import { asyncHandler } from '../../../utils/async-handler';
 import { ApiError } from '../../../common/errors/api-error';
 import { sendSuccess } from '../../../common/responses/api-response';
-import { Organization } from '../schemas';
-import { User } from '../schemas';
+import { Organization, User, PlatformUser } from '../schemas';
 import { Role } from '../../roles/schemas/index';
 import { BillingEntity } from '../../masters/schemas/index';
 import { TenantSettings } from '../../masters/schemas/index';
@@ -43,23 +42,14 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
 
   // Clean up any old pending_payment garbage from previous tests
   if (email) {
-    const existingUser = await User.findOne({ email }).setOptions({ skipTenantPlugin: true });
-    if (existingUser) {
-      const org = await Organization.findById(existingUser.tenantId);
-      if (org && org.subscriptionStatus === 'pending_payment') {
-        // Delete the stale test records to allow a fresh start
-        await User.deleteOne({ _id: existingUser._id });
-        await Organization.deleteOne({ _id: org._id });
-        await Role.deleteMany({ tenantId: org._id });
-        await BillingEntity.deleteMany({ tenantId: org._id });
-        await TenantSettings.deleteMany({ tenantId: org._id });
-      } else {
-        throw new ApiError(409, 'User with this email already exists and is active', 'USER_EXISTS');
-      }
+    const normalizedEmail = email.toLowerCase();
+    const existingPlatformUser = await PlatformUser.findOne({ email: normalizedEmail });
+    if (existingPlatformUser && existingPlatformUser.status === 'active') {
+      throw new ApiError(409, 'A practice owner with this email already exists', 'USER_EXISTS');
     }
 
     // Verify that the email was verified using OTP
-    const verifiedOtp = await Otp.findOne({ email: email.toLowerCase(), isVerified: true });
+    const verifiedOtp = await Otp.findOne({ email: normalizedEmail, isVerified: true });
     if (!verifiedOtp) {
       throw new ApiError(400, 'Email is not verified. Please verify your email with OTP.', 'EMAIL_NOT_VERIFIED');
     }
@@ -116,14 +106,10 @@ export const sendOtp = asyncHandler(async (req: Request, res: Response) => {
   const { email } = parsed.data;
   const normalizedEmail = email.toLowerCase();
   
-  // Check if user already exists before sending OTP
-  const existingUser = await User.findOne({ email: normalizedEmail }).setOptions({ skipTenantPlugin: true });
-  if (existingUser) {
-    const org = await Organization.findById(existingUser.tenantId);
-    // If the org is active (or anything other than pending_payment), we reject the OTP request
-    if (org && org.subscriptionStatus !== 'pending_payment') {
-      throw new ApiError(409, 'User with this email already exists', 'USER_EXISTS');
-    }
+  // Check if platform user already exists before sending OTP
+  const existingPlatformUser = await PlatformUser.findOne({ email: normalizedEmail });
+  if (existingPlatformUser && existingPlatformUser.status === 'active') {
+    throw new ApiError(409, 'A practice owner with this email already exists', 'USER_EXISTS');
   }
 
   // Generate 6 digit OTP
@@ -220,53 +206,134 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   }
 
   const { email, password } = parsed.data;
+  const normalizedEmail = email.toLowerCase();
 
-  // 1. Find user by email (globally unique)
-  const user = await User.findOne({ email: email.toLowerCase() })
+  // 1. First Priority: Platform User (Practice Owner / Super Admin)
+  const platformUser = await PlatformUser.findOne({ email: normalizedEmail }).select('+password');
+  if (platformUser) {
+    const isMatch = await platformUser.comparePassword(password);
+    if (!isMatch) {
+      throw new ApiError(401, 'Invalid email or password', 'INVALID_CREDENTIALS');
+    }
+
+    if (platformUser.status !== 'active') {
+      throw new ApiError(403, 'Account is deactivated', 'ACCOUNT_DEACTIVATED');
+    }
+
+    const org = await Organization.findOne({ ownerId: platformUser._id });
+    if (!org) {
+      throw new ApiError(404, 'Organization not found for platform user', 'ORG_NOT_FOUND');
+    }
+
+    const tenantUser = await User.findOne({ tenantId: org._id, isOwner: true })
+      .populate('roleId')
+      .setOptions({ skipTenantPlugin: true });
+
+    if (!tenantUser) {
+      throw new ApiError(404, 'Owner workspace profile not found', 'USER_NOT_FOUND');
+    }
+
+    const roleIdString = (tenantUser.roleId as any)?._id
+      ? (tenantUser.roleId as any)._id.toString()
+      : tenantUser.roleId.toString();
+
+    const tokenPayload = {
+      userId: tenantUser._id.toString(),
+      platformUserId: platformUser._id.toString(),
+      tenantId: org._id.toString(),
+      roleId: roleIdString,
+      tokenVersion: platformUser.tokenVersion,
+      isOwner: true
+    };
+
+    const accessToken = generateAccessToken(tokenPayload);
+    const refreshToken = generateRefreshToken(tokenPayload);
+
+    platformUser.refreshToken = refreshToken;
+    platformUser.lastLoginAt = new Date();
+    await platformUser.save();
+
+    tenantUser.refreshToken = refreshToken;
+    await tenantUser.save();
+
+    return sendSuccess(res, 200, 'Login successful', {
+      accessToken,
+      refreshToken,
+      user: {
+        _id: tenantUser._id,
+        name: tenantUser.name,
+        username: tenantUser.username,
+        email: platformUser.email,
+        roleId: tenantUser.roleId,
+        isOwner: true,
+        userType: 'PlatformUser'
+      },
+      organization: {
+        _id: org._id,
+        name: org.name,
+        slug: org.slug,
+        subscriptionStatus: org.subscriptionStatus
+      }
+    });
+  }
+
+  // 2. Second Priority: Tenant User (Staff Member / Accountant)
+  const tenantUser = await User.findOne({ email: normalizedEmail })
     .populate('roleId')
     .select('+password')
     .setOptions({ skipTenantPlugin: true });
 
-  if (!user) {
+  if (!tenantUser) {
     throw new ApiError(401, 'Invalid email or password', 'INVALID_CREDENTIALS');
   }
 
-  // 2. Load their organization to get token payload values
-  const org = await Organization.findById(user.tenantId);
-  if (!org) {
-    throw new ApiError(401, 'Organization not found for user', 'INVALID_CREDENTIALS');
+  if (tenantUser.invitationStatus === 'invited' && !tenantUser.password) {
+    throw new ApiError(403, 'Please activate your account using the invitation email sent to you.', 'INVITATION_PENDING');
   }
 
-  const isMatch = await user.comparePassword(password);
+  const isMatch = await tenantUser.comparePassword(password);
   if (!isMatch) {
     throw new ApiError(401, 'Invalid email or password', 'INVALID_CREDENTIALS');
   }
 
-  if (!user.isActive) {
+  if (!tenantUser.isActive) {
     throw new ApiError(403, 'Account is deactivated', 'ACCOUNT_DEACTIVATED');
   }
 
+  const org = await Organization.findById(tenantUser.tenantId);
+  if (!org) {
+    throw new ApiError(401, 'Organization not found for user', 'INVALID_CREDENTIALS');
+  }
+
+  const roleIdString = (tenantUser.roleId as any)?._id
+    ? (tenantUser.roleId as any)._id.toString()
+    : tenantUser.roleId.toString();
+
   const tokenPayload = {
-    userId: user._id.toString(),
+    userId: tenantUser._id.toString(),
     tenantId: org._id.toString(),
-    roleId: user.roleId.toString(),
-    tokenVersion: user.tokenVersion
+    roleId: roleIdString,
+    tokenVersion: tenantUser.tokenVersion,
+    isOwner: tenantUser.isOwner || false
   };
 
   const accessToken = generateAccessToken(tokenPayload);
   const refreshToken = generateRefreshToken(tokenPayload);
 
-  user.refreshToken = refreshToken;
-  await user.save();
+  tenantUser.refreshToken = refreshToken;
+  await tenantUser.save();
 
   return sendSuccess(res, 200, 'Login successful', {
     accessToken,
     refreshToken,
     user: {
-      _id: user._id,
-      name: user.name,
-      username: user.username,
-      roleId: user.roleId
+      _id: tenantUser._id,
+      name: tenantUser.name,
+      username: tenantUser.username,
+      email: tenantUser.email,
+      roleId: tenantUser.roleId,
+      isOwner: tenantUser.isOwner || false,
+      userType: 'TenantUser'
     },
     organization: {
       _id: org._id,
@@ -434,4 +501,78 @@ export const resetPassword = asyncHandler(async (req: Request, res: Response) =>
   await user.save();
 
   return sendSuccess(res, 200, 'Password has been reset successfully', null);
+});
+
+const verifyInviteSchema = z.object({
+  token: z.string().min(1, 'Token is required')
+});
+
+export const verifyInvite = asyncHandler(async (req: Request, res: Response) => {
+  const parsed = verifyInviteSchema.safeParse(req.query);
+  if (!parsed.success) {
+    throw new ApiError(400, 'Invalid invitation token', 'VALIDATION_FAILED');
+  }
+
+  const { token } = parsed.data;
+  const user = await User.findOne({
+    invitationToken: token,
+    invitationStatus: 'invited'
+  }).setOptions({ skipTenantPlugin: true });
+
+  if (!user) {
+    throw new ApiError(400, 'Invalid or expired invitation link', 'INVALID_INVITE_TOKEN');
+  }
+
+  if (user.invitationExpiresAt && user.invitationExpiresAt < new Date()) {
+    throw new ApiError(400, 'Invitation link has expired. Please ask your administrator to resend the invite.', 'INVITE_EXPIRED');
+  }
+
+  const org = await Organization.findById(user.tenantId);
+
+  return sendSuccess(res, 200, 'Invitation verified', {
+    name: user.name,
+    email: user.email,
+    username: user.username,
+    organizationName: org?.name || 'Your Practice'
+  });
+});
+
+const activateInviteSchema = z.object({
+  token: z.string().min(1, 'Token is required'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+  confirmPassword: z.string()
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"]
+});
+
+export const activateInvite = asyncHandler(async (req: Request, res: Response) => {
+  const parsed = activateInviteSchema.safeParse(req.body);
+  if (!parsed.success) {
+    const errors = parsed.error.issues.map((e: any) => `${e.path.join('.')}: ${e.message}`);
+    throw new ApiError(400, 'Validation Error', 'VALIDATION_FAILED', errors);
+  }
+
+  const { token, password } = parsed.data;
+  const user = await User.findOne({
+    invitationToken: token,
+    invitationStatus: 'invited'
+  }).setOptions({ skipTenantPlugin: true });
+
+  if (!user) {
+    throw new ApiError(400, 'Invalid or expired invitation link', 'INVALID_INVITE_TOKEN');
+  }
+
+  if (user.invitationExpiresAt && user.invitationExpiresAt < new Date()) {
+    throw new ApiError(400, 'Invitation link has expired', 'INVITE_EXPIRED');
+  }
+
+  user.password = password; // pre-save will hash with bcrypt
+  user.invitationStatus = 'active';
+  user.invitationToken = undefined;
+  user.invitationExpiresAt = undefined;
+  user.isActive = true;
+  await user.save();
+
+  return sendSuccess(res, 200, 'Account activated successfully! You can now log in.', null);
 });

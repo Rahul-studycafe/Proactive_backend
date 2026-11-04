@@ -3,8 +3,8 @@ import { asyncHandler } from '../utils/async-handler';
 import { ApiError } from '../utils/ApiError';
 import { sendSuccess } from '../utils/ApiResponse';
 import { PricingTier } from '../models/PricingTier';
-import { Organization } from '../modules/auth/schemas';
-import { User } from '../modules/auth/schemas';
+import { Organization, User, PlatformUser } from '../modules/auth/schemas';
+
 import { Role } from '../modules/roles/schemas';
 import { BillingEntity } from '../modules/masters/schemas';
 import { TenantSettings } from '../modules/masters/schemas';
@@ -118,10 +118,24 @@ export const verifyPayment = asyncHandler(async (req: Request, res: Response) =>
   const nextYear = new Date();
   nextYear.setFullYear(nextYear.getFullYear() + 1);
 
-  // 1. Create Organization
+  // 1. Create Platform User (Account Owner)
+  const platformUser = new PlatformUser({
+    name,
+    email: email.toLowerCase(),
+    mobile,
+    password, // pre-save will hash
+    isEmailVerified: true,
+    emailVerifiedAt: new Date(),
+    status: 'active',
+    tokenVersion: 1
+  });
+  await platformUser.save();
+
+  // 2. Create Organization
   const organization = new Organization({
     name: orgName,
     slug,
+    ownerId: platformUser._id,
     plan: {
       maxUsers: usersCount
     },
@@ -130,7 +144,7 @@ export const verifyPayment = asyncHandler(async (req: Request, res: Response) =>
   });
   await organization.save();
 
-  // 2. Create Super Admin Role
+  // 3. Create Super Admin Role
   const superAdminRole = new Role({
     tenantId: organization._id,
     name: 'Super Admin',
@@ -140,15 +154,18 @@ export const verifyPayment = asyncHandler(async (req: Request, res: Response) =>
   });
   await superAdminRole.save();
 
-  // 3. Create User
+  // 4. Create Anchor Tenant User for Owner
   const userRecord = new User({
     tenantId: organization._id,
+    platformUserId: platformUser._id,
     name,
     username,
     password, // hashed by pre-save hook
-    email,
+    email: email.toLowerCase(),
     mobile,
     roleId: superAdminRole._id,
+    isOwner: true,
+    invitationStatus: 'active',
     tokenVersion: 1
   });
   await userRecord.save();
@@ -253,34 +270,53 @@ export const handleRazorpayWebhook = asyncHandler(async (req: Request | any, res
 
     // Fulfill the order on the backend side!
     
-    // 1. Create Organization
+    // 1. Create Platform User (Account Owner)
+    const platformUser = new PlatformUser({
+      name: pending.name,
+      email: pending.email.toLowerCase(),
+      mobile: pending.mobile,
+      password: pending.password,
+      isEmailVerified: true,
+      emailVerifiedAt: new Date(),
+      status: 'active',
+      tokenVersion: 1
+    });
+    await platformUser.save();
+
+    // 2. Create Organization
     const organization = new Organization({
       name: pending.orgName,
       slug: pending.orgName.toLowerCase().replace(/[^a-z0-9]/g, '-'),
-      subscriptionStatus: 'active', // Mark active directly
-      currentUsersCount: pending.usersCount,
-      maxUsersCount: pending.usersCount
+      ownerId: platformUser._id,
+      subscriptionStatus: 'active',
+      plan: {
+        maxUsers: pending.usersCount
+      }
     });
     await organization.save();
 
-    // 2. Create Super Admin Role
+    // 3. Create Super Admin Role
     const superAdminRole = new Role({
       tenantId: organization._id,
       name: 'Super Admin',
-      permissions: ['*'],
-      isSystem: true
+      description: 'System generated super admin role',
+      isSuperAdmin: true,
+      permissions: {}
     });
     await superAdminRole.save();
 
-    // 3. Create User
+    // 4. Create Anchor Tenant User for Owner
     const userRecord = new User({
       tenantId: organization._id,
+      platformUserId: platformUser._id,
       name: pending.name,
       username: pending.username,
       password: pending.password,
-      email: pending.email,
+      email: pending.email.toLowerCase(),
       mobile: pending.mobile,
       roleId: superAdminRole._id,
+      isOwner: true,
+      invitationStatus: 'active',
       tokenVersion: 1
     });
     await userRecord.save();

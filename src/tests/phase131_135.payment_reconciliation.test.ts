@@ -249,7 +249,23 @@ describe('Part 27 (Phases 131–135): Payment Gateway, Dynamic UPI & Instant Rec
 
       expect(res.status).toBe(200);
       expect(res.body.data.amountDue).toBe(14160);
+      expect(res.body.data.amount).toBe(14160);
+      expect(res.body.data.upiVpa).toBe('apexadvisors@hdfcbank');
+      expect(res.body.data.upiId).toBe('apexadvisors@hdfcbank');
       expect(res.body.data.qrBase64).toMatch(/^data:image\/png;base64,/);
+      expect(res.body.data.qrDataUrl).toMatch(/^data:image\/png;base64,/);
+      expect(res.body.data.npciUri).toContain('upi://pay?');
+    });
+
+    it('POST /api/v1/portal/invoices/:id/payment-link should allow client portal users to generate checkout payment link', async () => {
+      const res = await request(app)
+        .post(`/api/v1/portal/invoices/${testInvoiceId}/payment-link`)
+        .set('Authorization', `Bearer ${clientToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.paymentLinkId).toBeDefined();
+      expect(res.body.data.shortUrl).toBeDefined();
     });
 
     it('POST /api/v1/invoices/:id/payment-link should generate and attach payment link to invoice', async () => {
@@ -416,6 +432,55 @@ describe('Part 27 (Phases 131–135): Payment Gateway, Dynamic UPI & Instant Rec
 
       expect(res.status).toBe(200);
       expect(res.body.data.transactions.length).toBe(0);
+    });
+
+    it('POST /api/v1/portal/invoices/:id/confirm-payment should allow client to directly confirm payment with UTR and issue receipt', async () => {
+      const directInv = await Invoice.create({
+        tenantId,
+        clientId,
+        invoiceNo: `INV-CONFIRM-${Date.now()}`,
+        date: new Date(),
+        items: [
+          {
+            referenceType: 'Manual',
+            particulars: 'Tax Consultation Direct',
+            quantity: 1,
+            rate: 2500,
+            discount: 0,
+            taxableAmount: 2500,
+            gstPercentage: 0,
+            gstAmount: 0,
+            total: 2500
+          }
+        ],
+        totals: {
+          subtotal: 2500,
+          totalDiscount: 0,
+          totalTaxable: 2500,
+          totalGst: 0,
+          roundOff: 0,
+          grandTotal: 2500,
+          amountPaid: 0,
+          amountDue: 2500
+        },
+        status: 'Unpaid'
+      });
+
+      const utr = `UTR${Date.now()}`;
+      const res = await request(app)
+        .post(`/api/v1/portal/invoices/${directInv._id}/confirm-payment`)
+        .set('Authorization', `Bearer ${clientToken}`)
+        .send({ utrNumber: utr });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.receipt).toBeDefined();
+      expect(res.body.data.receipt.receiptNo).toMatch(/^RCT-/);
+      expect(res.body.data.receipt.totalAmount).toBe(2500);
+
+      const settled = await Invoice.findById(directInv._id);
+      expect(settled!.status).toBe('Paid');
+      expect(settled!.totals.amountDue).toBe(0);
     });
   });
 });

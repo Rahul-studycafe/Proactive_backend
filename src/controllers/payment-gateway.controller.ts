@@ -89,6 +89,35 @@ export const createInvoicePaymentLink = asyncHandler(async (req: Request, res: R
   sendSuccess(res, 200, 'Payment link generated successfully', result);
 });
 
+export const confirmPortalPayment = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const tenantId = req.tenantId!;
+  const clientId = req.clientId;
+  const { utrNumber } = req.body || {};
+
+  const result = await PaymentGatewayService.confirmDirectPayment(tenantId, id as string, clientId, utrNumber);
+  sendSuccess(res, 200, 'Direct payment confirmed and receipt issued successfully', result);
+});
+
+export const getOutlayUpiQr = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const tenantId = req.tenantId!;
+  const clientId = req.clientId;
+
+  const result = await PaymentGatewayService.generateOutlayUpiQr(tenantId, id as string, clientId);
+  sendSuccess(res, 200, 'Outlay UPI QR code generated successfully', result);
+});
+
+export const confirmOutlayPayment = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const tenantId = req.tenantId!;
+  const clientId = req.clientId;
+  const { utrNumber } = req.body || {};
+
+  const result = await PaymentGatewayService.confirmOutlayPayment(tenantId, id as string, clientId, utrNumber);
+  sendSuccess(res, 200, 'Outlay direct reimbursement confirmed and receipt issued successfully', result);
+});
+
 // ─── Phase 133 & 134: Gateway Webhook & ACID Reconciliation ──────
 export const handleClientPaymentWebhook = asyncHandler(async (req: Request, res: Response) => {
   const signature = (req.headers['x-razorpay-signature'] ||

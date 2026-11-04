@@ -8,7 +8,9 @@ import {
   getInvoices,
   getInvoiceById,
   updateInvoice,
-  cancelInvoice
+  cancelInvoice,
+  getInvoiceAvailableAdvance,
+  applyAdvanceToInvoice
 } from '../controllers/invoice.controller';
 import {
   getInvoiceUpiQr,
@@ -27,6 +29,8 @@ router.get('/unbilled-expenses/:clientId', authorize('invoice', 'create'), getUn
 // Payment & Dynamic UPI QR (Phase 132)
 router.get('/:id/upi-qr', authorize('invoice', 'view'), getInvoiceUpiQr);
 router.post('/:id/payment-link', authorize('invoice', 'edit'), createInvoicePaymentLink);
+router.get('/:id/available-advance', authorize('invoice', 'view'), getInvoiceAvailableAdvance);
+router.post('/:id/apply-advance', authorize('invoice', 'edit'), applyAdvanceToInvoice);
 
 // Invoice CRUD
 router.post('/', authorize('invoice', 'create'), createInvoice);

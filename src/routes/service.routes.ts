@@ -4,7 +4,8 @@ import {
   getServiceById,
   createService,
   updateService,
-  deleteService
+  deleteService,
+  getServiceClients
 } from '../modules/services/controllers/service.controller';
 import { authenticate } from '../middlewares/authenticate';
 import { authorize } from '../middlewares/authorize';
@@ -19,6 +20,9 @@ router.get('/', authorize('settings', 'manageMasters'), getServices);
 
 // Get single service
 router.get('/:id', authorize('settings', 'manageMasters'), getServiceById);
+
+// Get clients subscribed to service
+router.get('/:id/clients', authorize('settings', 'manageMasters'), getServiceClients);
 
 // Create service
 router.post('/', authorize('settings', 'manageMasters'), createService);

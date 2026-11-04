@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Standard transporter (VPN was the root cause of the slowdown)
+// Standard transporter
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -47,8 +47,6 @@ export const sendOtpEmail = async (to: string, otp: string): Promise<void> => {
  * @param resetLink The full URL for resetting the password
  */
 export const sendPasswordResetEmail = async (to: string, resetLink: string): Promise<void> => {
-    console.log("function called sendPasswordResetEmail")
-
   const mailOptions = {
     from: `"Proactive" <${process.env.EMAIL_USER}>`,
     to,
@@ -72,4 +70,45 @@ export const sendPasswordResetEmail = async (to: string, resetLink: string): Pro
   };
 
   await transporter.sendMail(mailOptions);
+};
+
+/**
+ * Sends an invitation email to a newly added practice team member.
+ */
+export const sendStaffInvitationEmail = async (
+  to: string,
+  inviteLink: string,
+  orgName: string,
+  inviterName: string
+): Promise<void> => {
+  const mailOptions = {
+    from: `"Proactive" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: `You've been invited to join ${orgName} on Proactive`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaeb; border-radius: 8px;">
+        <h2 style="color: #111; text-align: center;">You're Invited!</h2>
+        <p style="color: #444; font-size: 16px;">
+          <strong>${inviterName}</strong> has invited you to join <strong>${orgName}</strong> on Proactive Practice Management System.
+        </p>
+        <p style="color: #444; font-size: 16px;">
+          Click the button below to accept your invitation and set up your password. This link is valid for 7 days.
+        </p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${inviteLink}" style="background-color: #2563eb; color: #fff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; display: inline-block;">
+            Accept Invitation & Set Password
+          </a>
+        </div>
+        <p style="color: #666; font-size: 14px;">
+          If you were not expecting this invitation, you can safely ignore this email.
+        </p>
+      </div>
+    `,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+  } catch (err) {
+    console.error('Failed to send staff invitation email:', err);
+  }
 };

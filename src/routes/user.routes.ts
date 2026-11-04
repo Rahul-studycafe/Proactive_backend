@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createUser, getUsers, getUserById, updateUser, replaceUser } from '../modules/users/controllers/user.controller';
+import { createUser, getUsers, getUserById, updateUser, replaceUser, deleteUser } from '../modules/users/controllers/user.controller';
 import { authenticate } from '../middlewares/authenticate';
 import { authorize } from '../middlewares/authorize';
 import { checkSeatLimit } from '../middlewares/plan-guard';
@@ -23,5 +23,8 @@ router.post('/', authorize('user', 'create'), checkSeatLimit, createUser);
 
 // Update user (requires 'user.edit' permission)
 router.put('/:id', authorize('user', 'edit'), updateUser);
+
+// Delete user (requires 'user.delete' permission)
+router.delete('/:id', authorize('user', 'delete'), deleteUser);
 
 export default router;

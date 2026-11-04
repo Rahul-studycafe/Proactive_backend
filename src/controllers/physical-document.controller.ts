@@ -11,12 +11,18 @@ import {
   deletePhysicalDocumentService,
   returnPhysicalDocumentService,
   getStorageLocationsService,
+  createStorageLocationService,
+  updateStorageLocationService,
+  deleteStorageLocationService,
   scanOverduePhysicalDocumentsService,
   exportPhysicalDocumentsCsvService,
-  generateHandoverSlipService
+  generateHandoverSlipService,
+  getAvailablePhysicalDocsForMovementService,
+  getDocumentMovementHistoryService
 } from '../services/physical-document.service';
 
 const createPhysicalDocumentSchema = z.object({
+  documentId: z.string().optional(),
   clientId: z.string().min(1, 'Client ID is required'),
   date: z.string().optional(),
   category: z.enum(['Received', 'Given']),
@@ -68,6 +74,27 @@ const returnPhysicalDocumentSchema = z.object({
   actualReturnedDate: z.string().optional(),
   returnedToPersonName: z.string().optional(),
   returnedNotes: z.string().optional()
+});
+
+const createStorageLocationSchema = z.object({
+  name: z.string().min(2, 'Storage unit name must be at least 2 characters'),
+  code: z.string().optional(),
+  unitType: z
+    .enum(['Cabinet', 'Shelf', 'Safe Box', 'Locker', 'Drawer', 'Archive Room', 'Other'])
+    .optional(),
+  roomOrFloor: z.string().optional(),
+  description: z.string().optional()
+});
+
+const updateStorageLocationSchema = z.object({
+  name: z.string().min(2).optional(),
+  code: z.string().optional(),
+  unitType: z
+    .enum(['Cabinet', 'Shelf', 'Safe Box', 'Locker', 'Drawer', 'Archive Room', 'Other'])
+    .optional(),
+  roomOrFloor: z.string().optional(),
+  description: z.string().optional(),
+  updateReferencedDocs: z.boolean().optional()
 });
 
 export const createPhysicalDocument = asyncHandler(
@@ -198,6 +225,64 @@ export const getStorageLocations = asyncHandler(
   }
 );
 
+export const createStorageLocation = asyncHandler(
+  async (req: Request, res: Response) => {
+    const parsed = createStorageLocationSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const errors = parsed.error.issues.map(
+        (e) => `${e.path.join('.')}: ${e.message}`
+      );
+      throw new ApiError(400, 'Validation Error', 'VALIDATION_FAILED', errors);
+    }
+
+    const unit = await createStorageLocationService(req.tenantId!, parsed.data);
+    return sendSuccess(
+      res,
+      201,
+      'Office storage unit created successfully',
+      unit
+    );
+  }
+);
+
+export const updateStorageLocation = asyncHandler(
+  async (req: Request, res: Response) => {
+    const parsed = updateStorageLocationSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const errors = parsed.error.issues.map(
+        (e) => `${e.path.join('.')}: ${e.message}`
+      );
+      throw new ApiError(400, 'Validation Error', 'VALIDATION_FAILED', errors);
+    }
+
+    const id = req.params.id as string;
+    const unit = await updateStorageLocationService(
+      req.tenantId!,
+      id,
+      parsed.data
+    );
+
+    return sendSuccess(
+      res,
+      200,
+      'Office storage unit updated successfully',
+      unit
+    );
+  }
+);
+
+export const deleteStorageLocation = asyncHandler(
+  async (req: Request, res: Response) => {
+    const id = req.params.id as string;
+    await deleteStorageLocationService(req.tenantId!, id);
+    return sendSuccess(
+      res,
+      200,
+      'Office storage unit deleted successfully'
+    );
+  }
+);
+
 export const triggerOverdueScan = asyncHandler(
   async (req: Request, res: Response) => {
     const { referenceDate } = req.body;
@@ -245,6 +330,47 @@ export const getHandoverSlip = asyncHandler(
       200,
       'Handover slip generated successfully',
       slip
+    );
+  }
+);
+
+export const getAvailablePhysicalDocsForMovement = asyncHandler(
+  async (req: Request, res: Response) => {
+    const clientId = req.query.clientId as string;
+    const category = (req.query.category as any) || 'Given';
+
+    if (!clientId) {
+      throw new ApiError(400, 'Client ID is required', 'VALIDATION_ERROR');
+    }
+
+    const docs = await getAvailablePhysicalDocsForMovementService(
+      req.tenantId!,
+      clientId,
+      category
+    );
+
+    return sendSuccess(
+      res,
+      200,
+      'Available documents for movement fetched successfully',
+      docs
+    );
+  }
+);
+
+export const getDocumentMovementHistory = asyncHandler(
+  async (req: Request, res: Response) => {
+    const id = req.params.id as string;
+    const result = await getDocumentMovementHistoryService(
+      req.tenantId!,
+      id
+    );
+
+    return sendSuccess(
+      res,
+      200,
+      'Document movement history retrieved successfully',
+      result
     );
   }
 );

@@ -23,14 +23,22 @@ import {
   getPortalInvoices,
   getPortalReceipts,
   getPortalLedger,
+  getPortalOutlays,
   getPortalInvoicePdf,
+  applyAdvanceToPortalInvoice,
   getPortalDocumentRequests,
   fulfillPortalDocumentRequest,
   createPortalQueryTicket,
   getPortalQueryTickets,
   getPortalQueryTicketById
 } from '../controllers/portal-hub.controller';
-import { getInvoiceUpiQr } from '../controllers/payment-gateway.controller';
+import {
+  getInvoiceUpiQr,
+  createInvoicePaymentLink,
+  confirmPortalPayment,
+  getOutlayUpiQr,
+  confirmOutlayPayment
+} from '../controllers/payment-gateway.controller';
 import { clientAuthenticate } from '../middlewares/client-auth';
 
 const portalDocStorage = multer.diskStorage({
@@ -83,8 +91,14 @@ router.get('/documents/:id/download', clientAuthenticate, downloadPortalDocument
 router.get('/invoices', clientAuthenticate, getPortalInvoices);
 router.get('/invoices/:id/pdf', clientAuthenticate, getPortalInvoicePdf);
 router.get('/invoices/:id/upi-qr', clientAuthenticate, getInvoiceUpiQr);
+router.post('/invoices/:id/payment-link', clientAuthenticate, createInvoicePaymentLink);
+router.post('/invoices/:id/confirm-payment', clientAuthenticate, confirmPortalPayment);
+router.post('/invoices/:id/apply-advance', clientAuthenticate, applyAdvanceToPortalInvoice);
 router.get('/receipts', clientAuthenticate, getPortalReceipts);
 router.get('/ledger', clientAuthenticate, getPortalLedger);
+router.get('/outlays', clientAuthenticate, getPortalOutlays);
+router.get('/outlays/:id/upi-qr', clientAuthenticate, getOutlayUpiQr);
+router.post('/outlays/:id/confirm-payment', clientAuthenticate, confirmOutlayPayment);
 
 // Phase 129: Direct Document Request Fulfillment Service
 router.get('/document-requests', clientAuthenticate, getPortalDocumentRequests);

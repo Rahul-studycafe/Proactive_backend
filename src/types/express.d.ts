@@ -16,6 +16,8 @@ declare global {
         roleId: mongoose.Types.ObjectId;
         departmentId?: mongoose.Types.ObjectId;
         tokenVersion: number;
+        isOwner?: boolean;
+        platformUserId?: mongoose.Types.ObjectId;
       };
       /** The tenantId extracted from the JWT — NEVER from the client */
       tenantId?: mongoose.Types.ObjectId;

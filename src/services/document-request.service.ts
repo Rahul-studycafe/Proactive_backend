@@ -672,13 +672,44 @@ export const triggerAutoDocumentRequestForService = async (
     const defaultMsg =
       svc.autoDocCollection.defaultMessage?.trim() ||
       `Please provide the required documents for ${svc.name}.`;
+    const requestTitle = `Document Request: ${svc.name}`;
+
+    // 1. Idempotency Check: if taskId is provided, avoid duplicate request for this task
+    if (taskId) {
+      const existingTaskDocReq = await DocumentRequest.findOne({
+        tenantId,
+        taskId: new mongoose.Types.ObjectId(taskId.toString()),
+        status: { $nin: ['Cancelled', 'Expired'] }
+      });
+      if (existingTaskDocReq) {
+        return existingTaskDocReq;
+      }
+    }
+
+    // 2. Idempotency Check: check if an active pending/partially uploaded request already exists for this client and service
+    const existingActiveDocReq = await DocumentRequest.findOne({
+      tenantId,
+      clientId: new mongoose.Types.ObjectId(clientId.toString()),
+      title: requestTitle,
+      status: { $in: ['Pending', 'Partially Uploaded'] }
+    });
+
+    if (existingActiveDocReq) {
+      // If an existing request exists (e.g. from service subscription) without a taskId,
+      // and we now have a taskId from task generation, attach it to link them together!
+      if (taskId && !existingActiveDocReq.taskId) {
+        existingActiveDocReq.taskId = new mongoose.Types.ObjectId(taskId.toString());
+        await existingActiveDocReq.save();
+      }
+      return existingActiveDocReq;
+    }
 
     return await createDocumentRequestService(
       tenantId,
       {
         clientId: clientId.toString(),
         taskId: taskId ? taskId.toString() : undefined,
-        title: `Document Request: ${svc.name}`,
+        title: requestTitle,
         instructions: defaultMsg,
         expiresInDays: 7,
         items: [

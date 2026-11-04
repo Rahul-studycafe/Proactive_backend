@@ -65,7 +65,9 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       username: user.username,
       roleId: user.roleId,
       departmentId: user.departmentId,
-      tokenVersion: user.tokenVersion
+      tokenVersion: user.tokenVersion,
+      isOwner: user.isOwner || false,
+      platformUserId: user.platformUserId
     };
     req.tenantId = tenantId;
 

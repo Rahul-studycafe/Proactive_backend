@@ -40,7 +40,7 @@ const organizationSchema = new Schema<IOrganization>({
   company: { type: String, trim: true },
   slug: { type: String, unique: true, lowercase: true },
   
-  ownerId: { type: Schema.Types.ObjectId, ref: 'User' },
+  ownerId: { type: Schema.Types.ObjectId, ref: 'PlatformUser', index: true },
   
   subscriptionStatus: { type: String, enum: ['pending_payment', 'trial', 'active', 'past_due', 'canceled'], default: 'pending_payment' },
   subscriptionDuration: { type: String, enum: ['monthly', 'yearly'], default: 'monthly' },

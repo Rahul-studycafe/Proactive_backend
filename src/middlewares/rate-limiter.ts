@@ -5,7 +5,7 @@ export const authRateLimiter = rateLimit({
   limit: 10, // Limit each IP to 10 requests per `window` (here, per 15 minutes).
   standardHeaders: 'draft-7', // draft-6: `RateLimit-*` headers; draft-7: combined `RateLimit` header
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers.
-  skip: (req, res) => process.env.NODE_ENV === 'development', // Disable in development
+  skip: (req, res) => process.env.NODE_ENV !== 'production', // Disable in development / testing
   message: {
     success: false,
     error: {

@@ -18,6 +18,22 @@ export type PhysicalDocumentType = typeof PHYSICAL_DOCUMENT_TYPES[number];
 export const PHYSICAL_DOCUMENT_STATUSES = ['In Custody', 'Returned', 'Overdue'] as const;
 export type PhysicalDocumentStatus = typeof PHYSICAL_DOCUMENT_STATUSES[number];
 
+export interface IDocumentMovement {
+  _id?: mongoose.Types.ObjectId;
+  movementType: DocumentCategory;
+  date: Date;
+  location: string;
+  custodianUserId: mongoose.Types.ObjectId;
+  receivedByPersonName?: string;
+  receivedByPhone?: string;
+  returnedToPersonName?: string;
+  isReturnable: boolean;
+  returnDate?: Date;
+  actualReturnedDate?: Date;
+  notes?: string;
+  createdAt?: Date;
+}
+
 export interface IPhysicalDocument extends MongooseDocument {
   tenantId: mongoose.Types.ObjectId;
   clientId: mongoose.Types.ObjectId;
@@ -36,6 +52,7 @@ export interface IPhysicalDocument extends MongooseDocument {
   returnedToPersonName?: string;
   returnedNotes?: string;
   notes?: string;
+  movements?: IDocumentMovement[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -119,7 +136,61 @@ const physicalDocumentSchema = new Schema<IPhysicalDocument>(
     notes: {
       type: String,
       trim: true
-    }
+    },
+    movements: [
+      {
+        movementType: {
+          type: String,
+          enum: DOCUMENT_CATEGORIES,
+          required: true
+        },
+        date: {
+          type: Date,
+          default: Date.now,
+          required: true
+        },
+        location: {
+          type: String,
+          required: true,
+          trim: true
+        },
+        custodianUserId: {
+          type: Schema.Types.ObjectId,
+          ref: 'User',
+          required: true
+        },
+        receivedByPersonName: {
+          type: String,
+          trim: true
+        },
+        receivedByPhone: {
+          type: String,
+          trim: true
+        },
+        returnedToPersonName: {
+          type: String,
+          trim: true
+        },
+        isReturnable: {
+          type: Boolean,
+          default: false
+        },
+        returnDate: {
+          type: Date
+        },
+        actualReturnedDate: {
+          type: Date
+        },
+        notes: {
+          type: String,
+          trim: true
+        },
+        createdAt: {
+          type: Date,
+          default: Date.now
+        }
+      }
+    ]
   },
   {
     timestamps: true
@@ -128,6 +199,7 @@ const physicalDocumentSchema = new Schema<IPhysicalDocument>(
 
 // Compound indexes for fast multi-tenant queries
 physicalDocumentSchema.index({ tenantId: 1, clientId: 1, date: -1 });
+physicalDocumentSchema.index({ tenantId: 1, clientId: 1, documentName: 1 });
 physicalDocumentSchema.index({ tenantId: 1, status: 1 });
 physicalDocumentSchema.index({ tenantId: 1, returnDate: 1 });
 physicalDocumentSchema.index({ tenantId: 1, location: 1 });

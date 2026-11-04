@@ -1,11 +1,14 @@
 import mongoose from 'mongoose';
 import QRCode from 'qrcode';
 import crypto from 'crypto';
-import Razorpay from 'razorpay';
 import { PaymentGatewayConfig, IPaymentGatewayConfig, PaymentProvider } from '../models/PaymentGatewayConfig';
 import { PaymentTransaction, IPaymentTransaction } from '../models/PaymentTransaction';
 import { Invoice } from '../models/Invoice';
 import { Receipt } from '../models/Receipt';
+import { CreditNote } from '../models/CreditNote';
+import { BillingEntity } from '../models/BillingEntity';
+import { Expense } from '../models/Expense';
+import { Client } from '../modules/clients/schemas/client.schema';
 import { Organization } from '../modules/auth/schemas';
 import { encryptPassword, decryptPassword } from '../utils/crypto-vault';
 import { getNextReceiptNumber } from './sequence.service';
@@ -129,6 +132,24 @@ export class PaymentGatewayService {
     const config = await this.resolveActiveConfig(tenantId, invoice.billingEntityId);
     let upiVpa = config?.upiVpa;
     let merchantName = config?.merchantName;
+    let bankDetails: any = null;
+
+    if (invoice.billingEntityId) {
+      const billingEntity = await BillingEntity.findOne({ _id: invoice.billingEntityId, tenantId });
+      if (billingEntity) {
+        upiVpa = upiVpa || (billingEntity as any).upiId || (billingEntity as any).bankDetails?.upiId;
+        merchantName = merchantName || (billingEntity as any).legalEntityName || (billingEntity as any).entityName || (billingEntity as any).name;
+        if ((billingEntity as any).bankDetails) {
+          bankDetails = {
+            bankName: (billingEntity as any).bankDetails.bankName,
+            accountNumber: (billingEntity as any).bankDetails.accountNumber,
+            ifsc: (billingEntity as any).bankDetails.ifsc,
+            branch: (billingEntity as any).bankDetails.branch,
+            upiId: (billingEntity as any).bankDetails.upiId || (billingEntity as any).upiId
+          };
+        }
+      }
+    }
 
     if (!upiVpa || !merchantName) {
       const org = await Organization.findById(tenantId).select('name');
@@ -150,15 +171,20 @@ export class PaymentGatewayService {
       invoiceId: invoice._id,
       invoiceNo,
       amountDue,
+      amount: amountDue,
       merchantName,
       upiVpa,
+      upiId: upiVpa,
       upiUri,
-      qrBase64
+      npciUri: upiUri,
+      qrBase64,
+      qrDataUrl: qrBase64,
+      bankDetails
     };
   }
 
   /**
-   * Phase 132: Generates online checkout payment link via Razorpay or simulated gateway link.
+   * Phase 132: Generates direct UPI payment link / reference without third-party gateways.
    */
   static async createInvoicePaymentLink(
     tenantId: mongoose.Types.ObjectId,
@@ -180,45 +206,211 @@ export class PaymentGatewayService {
       throw new ApiError(400, 'Invoice is already settled');
     }
 
-    const config = await this.resolveActiveConfig(tenantId, invoice.billingEntityId);
-    let paymentLinkId = `plink_${invoice._id}_${Date.now()}`;
-    let shortUrl = `https://rzp.io/i/${paymentLinkId}`;
-
-    if (config && config.provider === 'Razorpay' && config.keyId && config.encryptedKeySecret && config.iv) {
-      try {
-        const keySecret = decryptPassword(config.encryptedKeySecret, config.iv);
-        const rzp = new Razorpay({
-          key_id: config.keyId,
-          key_secret: keySecret
-        });
-
-        const rzpLink: any = await (rzp as any).paymentLink.create({
-          amount: Math.round(amountDue * 100),
-          currency: 'INR',
-          description: `Payment for Invoice ${invoice.invoiceNo}`,
-          reference_id: invoice.invoiceNo,
-          notes: {
-            tenantId: tenantId.toString(),
-            invoiceId: invoice._id.toString()
-          }
-        });
-
-        paymentLinkId = rzpLink?.id || paymentLinkId;
-        shortUrl = rzpLink?.short_url || shortUrl;
-      } catch (err: any) {
-        // Fallback to simulated link for sandbox/test environments without breaking
-        shortUrl = `https://rzp.io/i/${paymentLinkId}`;
-      }
-    }
+    const paymentLinkId = `upi_${invoice._id}_${Date.now()}`;
+    const qrData = await this.generateInvoiceUpiQr(tenantId, invoiceId, clientId);
+    const shortUrl = qrData.upiUri;
 
     invoice.paymentLinkId = paymentLinkId;
     invoice.paymentShortUrl = shortUrl;
-    await invoice.save();
+    await Invoice.updateOne(
+      { _id: invoice._id },
+      { $set: { paymentLinkId, paymentShortUrl: shortUrl } }
+    );
 
     return {
       paymentLinkId,
       shortUrl,
+      upiUri: qrData.upiUri,
       amountDue
+    };
+  }
+
+  /**
+   * Direct UPI & Bank Settlement: Confirms client payment and issues official receipt.
+   */
+  static async confirmDirectPayment(
+    tenantId: mongoose.Types.ObjectId,
+    invoiceId: string,
+    clientId?: mongoose.Types.ObjectId,
+    utrOrRef?: string
+  ) {
+    const query: any = { _id: invoiceId, tenantId };
+    if (clientId) {
+      query.clientId = clientId;
+    }
+
+    const invoice = await Invoice.findOne(query);
+    if (!invoice) {
+      throw new ApiError(404, 'Invoice not found or access denied');
+    }
+
+    if (invoice.totals.amountDue <= 0) {
+      throw new ApiError(400, 'Invoice is already settled');
+    }
+
+    const refId = utrOrRef?.trim() || `UPI_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const result = await this.reconcilePayment({
+      tenantId,
+      invoiceId: invoice._id.toString(),
+      gatewayTransactionId: refId,
+      gatewayOrderId: invoice.invoiceNo,
+      amount: invoice.totals.amountDue,
+      gatewayProvider: 'UPI_Direct',
+      paymentMethod: 'UPI',
+      rawPayload: { confirmedBy: 'ClientPortal', invoiceNo: invoice.invoiceNo, utr: refId }
+    });
+
+    return result;
+  }
+
+  /**
+   * Generates dynamic UPI QR Code for settling client-reimbursable outlays.
+   */
+  static async generateOutlayUpiQr(
+    tenantId: mongoose.Types.ObjectId,
+    outlayId: string,
+    clientId?: mongoose.Types.ObjectId
+  ) {
+    const query: any = { _id: outlayId, tenantId };
+    if (clientId) {
+      query.clientId = clientId;
+    }
+
+    const outlay = await Expense.findOne(query);
+    if (!outlay) {
+      throw new ApiError(404, 'Outlay expense not found or access denied');
+    }
+
+    if (outlay.isBilled) {
+      throw new ApiError(400, 'This outlay has already been billed or settled');
+    }
+
+    const amountDue = outlay.amount || 0;
+    if (amountDue <= 0) {
+      throw new ApiError(400, 'Outlay has zero amount due and cannot be paid');
+    }
+
+    const config = await this.resolveActiveConfig(tenantId);
+    let upiVpa = config?.upiVpa;
+    let merchantName = config?.merchantName;
+    let bankDetails: any = null;
+
+    const billingEntity = await BillingEntity.findOne({ tenantId, isDefault: true }) || await BillingEntity.findOne({ tenantId });
+    if (billingEntity) {
+      upiVpa = upiVpa || (billingEntity as any).upiId || (billingEntity as any).bankDetails?.upiId;
+      merchantName = merchantName || (billingEntity as any).legalEntityName || (billingEntity as any).entityName || (billingEntity as any).name;
+      if ((billingEntity as any).bankDetails) {
+        bankDetails = {
+          bankName: (billingEntity as any).bankDetails.bankName,
+          accountNumber: (billingEntity as any).bankDetails.accountNumber,
+          ifsc: (billingEntity as any).bankDetails.ifsc,
+          branch: (billingEntity as any).bankDetails.branch,
+          upiId: (billingEntity as any).bankDetails.upiId || (billingEntity as any).upiId
+        };
+      }
+    }
+
+    if (!upiVpa || !merchantName) {
+      const org = await Organization.findById(tenantId).select('name');
+      merchantName = merchantName || org?.name || 'Proactive Practice';
+      upiVpa = upiVpa || 'payment@proactive';
+    }
+
+    const formattedAmount = amountDue.toFixed(2);
+    const expenseNo = outlay.expenseNo;
+    const upiUri = `upi://pay?pa=${encodeURIComponent(upiVpa)}&pn=${encodeURIComponent(merchantName)}&am=${formattedAmount}&tr=${encodeURIComponent(expenseNo)}&tn=${encodeURIComponent(`Outlay_${expenseNo}`)}&cu=INR`;
+
+    const qrBase64 = await QRCode.toDataURL(upiUri, {
+      errorCorrectionLevel: 'M',
+      margin: 2,
+      scale: 6
+    });
+
+    return {
+      outlayId: outlay._id,
+      expenseNo,
+      amountDue,
+      amount: amountDue,
+      merchantName,
+      upiVpa,
+      upiId: upiVpa,
+      upiUri,
+      npciUri: upiUri,
+      qrBase64,
+      qrDataUrl: qrBase64,
+      bankDetails
+    };
+  }
+
+  /**
+   * Confirms client direct reimbursement payment for an outlay and issues official receipt.
+   */
+  static async confirmOutlayPayment(
+    tenantId: mongoose.Types.ObjectId,
+    outlayId: string,
+    clientId?: mongoose.Types.ObjectId,
+    utrOrRef?: string
+  ) {
+    const query: any = { _id: outlayId, tenantId };
+    if (clientId) {
+      query.clientId = clientId;
+    }
+
+    const outlay = await Expense.findOne(query);
+    if (!outlay) {
+      throw new ApiError(404, 'Outlay expense not found or access denied');
+    }
+
+    if (outlay.isBilled) {
+      throw new ApiError(400, 'This outlay has already been settled');
+    }
+
+    const refId = utrOrRef?.trim() || `UPI_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+    const receiptNo = await getNextReceiptNumber(tenantId);
+
+    const receipt = await Receipt.create({
+      tenantId,
+      clientId: outlay.clientId,
+      receiptNo,
+      date: new Date(),
+      paymentMode: 'UPI',
+      referenceNumber: refId,
+      totalAmount: outlay.amount,
+      unallocatedAmount: 0,
+      settlements: [],
+      notes: `Direct reimbursement for outlay ${outlay.expenseNo} (${outlay.categoryName || 'Practice Outlay'})`
+    });
+
+    outlay.isBilled = true;
+    outlay.billedAt = new Date();
+    outlay.notes = outlay.notes
+      ? `${outlay.notes} | Reimbursed via ${receiptNo} (Ref: ${refId})`
+      : `Reimbursed via ${receiptNo} (Ref: ${refId})`;
+    await outlay.save();
+
+    await PaymentTransaction.create({
+      tenantId,
+      clientId: outlay.clientId,
+      amount: outlay.amount,
+      currency: 'INR',
+      gatewayProvider: 'UPI_Direct',
+      gatewayTransactionId: refId,
+      status: 'Captured',
+      paymentMethod: 'UPI',
+      rawWebhookPayload: { outlayNo: outlay.expenseNo, receiptNo }
+    });
+
+    return {
+      receipt: {
+        _id: receipt._id,
+        receiptNo: receipt.receiptNo,
+        date: receipt.date,
+        totalAmount: receipt.totalAmount,
+        paymentMode: receipt.paymentMode,
+        referenceNumber: receipt.referenceNumber
+      },
+      outlay
     };
   }
 
@@ -265,7 +457,7 @@ export class PaymentGatewayService {
       gatewayTransactionId,
       gatewayOrderId,
       amount,
-      gatewayProvider = 'Razorpay',
+      gatewayProvider = 'UPI_Direct',
       paymentMethod = 'UPI',
       rawPayload
     } = params;
@@ -320,12 +512,23 @@ export class PaymentGatewayService {
         useTransaction && session ? session : undefined
       );
 
+      // Fetch credit notes applied to this invoice
+      const creditNotes = await CreditNote.find({
+        tenantId,
+        invoiceId: invoice._id,
+        status: { $ne: 'Cancelled' }
+      });
+      const totalCreditApplied = creditNotes.reduce(
+        (sum, cn) => sum + (cn.creditAppliedToInvoice || cn.totals?.grandTotal || 0),
+        0
+      );
+
       // Settle invoice amounts
       const settledAmount = Math.min(amount, invoice.totals.amountDue);
       invoice.totals.amountPaid = Math.round((invoice.totals.amountPaid + settledAmount) * 100) / 100;
       invoice.totals.amountDue = Math.max(
         0,
-        Math.round((invoice.totals.grandTotal - invoice.totals.amountPaid) * 100) / 100
+        Math.round((invoice.totals.grandTotal - invoice.totals.amountPaid - totalCreditApplied) * 100) / 100
       );
       invoice.status = invoice.totals.amountDue <= 0 ? 'Paid' : 'Partially Paid';
 

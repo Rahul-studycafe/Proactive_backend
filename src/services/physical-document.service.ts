@@ -6,12 +6,18 @@ import {
   PhysicalDocumentType,
   PhysicalDocumentStatus
 } from '../models/PhysicalDocument';
+import {
+  StorageUnitModel,
+  IStorageUnit,
+  StorageUnitType
+} from '../models/StorageUnit';
 import { Client } from '../modules/clients/schemas/client.schema';
 import { User } from '../modules/auth/schemas/user.schema';
 import { Organization } from '../modules/auth/schemas/organization.schema';
 import { ApiError } from '../common/errors/api-error';
 
 export interface CreatePhysicalDocumentInput {
+  documentId?: string;
   clientId: string;
   date?: string | Date;
   category: DocumentCategory;
@@ -23,6 +29,7 @@ export interface CreatePhysicalDocumentInput {
   custodianUserId?: string;
   receivedByPersonName?: string;
   receivedByPhone?: string;
+  returnedToPersonName?: string;
   notes?: string;
 }
 
@@ -45,6 +52,23 @@ export interface ReturnPhysicalDocumentInput {
   actualReturnedDate?: string | Date;
   returnedToPersonName?: string;
   returnedNotes?: string;
+}
+
+export interface CreateStorageUnitInput {
+  name: string;
+  code?: string;
+  unitType?: StorageUnitType;
+  roomOrFloor?: string;
+  description?: string;
+}
+
+export interface UpdateStorageUnitInput {
+  name?: string;
+  code?: string;
+  unitType?: StorageUnitType;
+  roomOrFloor?: string;
+  description?: string;
+  updateReferencedDocs?: boolean;
 }
 
 export interface GetPhysicalDocumentsQuery {
@@ -101,37 +125,168 @@ export const createPhysicalDocumentService = async (
     returnDate = new Date(data.returnDate);
   }
 
+  const docDate = data.date ? new Date(data.date) : new Date();
+
+  // CASE 1: Updating an existing document across transactions (Movements tracking)
+  if (data.documentId && mongoose.Types.ObjectId.isValid(data.documentId)) {
+    const existingDoc = await PhysicalDocumentModel.findOne({
+      _id: data.documentId,
+      tenantId
+    });
+
+    if (!existingDoc) {
+      throw new ApiError(404, 'Physical document record not found', 'DOCUMENT_NOT_FOUND');
+    }
+
+    if (existingDoc.clientId.toString() !== data.clientId) {
+      throw new ApiError(400, 'Document does not belong to the selected client', 'CLIENT_MISMATCH');
+    }
+
+    // Determine new status based on transaction category
+    let nextStatus: PhysicalDocumentStatus = 'In Custody';
+    let actualReturnedDate: Date | undefined;
+
+    if (data.category === 'Given') {
+      nextStatus = 'Returned';
+      actualReturnedDate = docDate;
+    } else if (isReturnable && returnDate && returnDate < new Date()) {
+      nextStatus = 'Overdue';
+    }
+
+    // Initialize movements array if missing from legacy records
+    if (!existingDoc.movements || existingDoc.movements.length === 0) {
+      existingDoc.movements = [
+        {
+          movementType: existingDoc.category || (data.category === 'Given' ? 'Received' : 'Given'),
+          date: existingDoc.date || existingDoc.createdAt || new Date(),
+          location: existingDoc.location || 'Office Storage',
+          custodianUserId: existingDoc.custodianUserId || custodianId,
+          receivedByPersonName: existingDoc.receivedByPersonName,
+          receivedByPhone: existingDoc.receivedByPhone,
+          returnedToPersonName: existingDoc.returnedToPersonName,
+          isReturnable: existingDoc.isReturnable,
+          returnDate: existingDoc.returnDate,
+          actualReturnedDate: existingDoc.actualReturnedDate,
+          notes: existingDoc.notes || 'Initial custody record',
+          createdAt: existingDoc.createdAt || new Date()
+        }
+      ];
+    }
+
+    // Record new movement entry
+    existingDoc.movements.push({
+      movementType: data.category,
+      date: docDate,
+      location: data.location.trim(),
+      custodianUserId: custodianId,
+      receivedByPersonName: data.category === 'Received' ? data.receivedByPersonName?.trim() : undefined,
+      receivedByPhone: data.receivedByPhone?.trim(),
+      returnedToPersonName: data.category === 'Given' ? (data.receivedByPersonName?.trim() || data.returnedToPersonName?.trim()) : undefined,
+      isReturnable,
+      returnDate,
+      actualReturnedDate,
+      notes: data.notes?.trim(),
+      createdAt: new Date()
+    });
+
+    // Update document's current state
+    existingDoc.category = data.category;
+    existingDoc.status = nextStatus;
+    existingDoc.date = docDate;
+    existingDoc.location = data.location.trim();
+    existingDoc.custodianUserId = custodianId;
+    existingDoc.isReturnable = isReturnable;
+    existingDoc.returnDate = returnDate;
+    existingDoc.actualReturnedDate = actualReturnedDate;
+    if (data.documentType) {
+      existingDoc.documentType = data.documentType;
+    }
+    if (data.category === 'Received') {
+      existingDoc.receivedByPersonName = data.receivedByPersonName?.trim();
+    } else {
+      existingDoc.returnedToPersonName = data.receivedByPersonName?.trim() || data.returnedToPersonName?.trim() || existingDoc.returnedToPersonName;
+    }
+    if (data.receivedByPhone) {
+      existingDoc.receivedByPhone = data.receivedByPhone.trim();
+    }
+    if (data.notes) {
+      existingDoc.notes = data.notes.trim();
+    }
+
+    await existingDoc.save();
+
+    return (await PhysicalDocumentModel.findById(existingDoc._id)
+      .populate('clientId', 'name email mobile fileNo')
+      .populate('custodianUserId', 'name email')) as IPhysicalDocument;
+  }
+
+  // CASE 2: Registering a brand new document
+  const trimmedName = data.documentName.trim();
+  const escapedName = trimmedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  // Prevent duplicate document names for the same client (case-insensitive & whitespace trimmed)
+  const duplicate = await PhysicalDocumentModel.findOne({
+    tenantId,
+    clientId: new mongoose.Types.ObjectId(data.clientId),
+    documentName: { $regex: new RegExp(`^${escapedName}$`, 'i') }
+  });
+
+  if (duplicate) {
+    throw new ApiError(
+      409,
+      `A document with the name "${duplicate.documentName}" already exists for this client. Please select it from the dropdown.`,
+      'DUPLICATE_DOCUMENT_NAME'
+    );
+  }
+
   // Determine initial status
   let status: PhysicalDocumentStatus = 'In Custody';
   let actualReturnedDate: Date | undefined;
 
   if (data.category === 'Given' && !isReturnable) {
     status = 'Returned';
-    actualReturnedDate = data.date ? new Date(data.date) : new Date();
+    actualReturnedDate = docDate;
   } else if (isReturnable && returnDate && returnDate < new Date()) {
     status = 'Overdue';
   }
 
+  const initialMovement = {
+    movementType: data.category,
+    date: docDate,
+    location: data.location.trim(),
+    custodianUserId: custodianId,
+    receivedByPersonName: data.category === 'Received' ? data.receivedByPersonName?.trim() : undefined,
+    receivedByPhone: data.receivedByPhone?.trim(),
+    returnedToPersonName: data.category === 'Given' ? (data.receivedByPersonName?.trim() || data.returnedToPersonName?.trim()) : undefined,
+    isReturnable,
+    returnDate,
+    actualReturnedDate,
+    notes: data.notes?.trim(),
+    createdAt: new Date()
+  };
+
   const doc = await PhysicalDocumentModel.create({
     tenantId,
     clientId: new mongoose.Types.ObjectId(data.clientId),
-    date: data.date ? new Date(data.date) : new Date(),
+    date: docDate,
     category: data.category,
     documentType: data.documentType,
-    documentName: data.documentName.trim(),
+    documentName: trimmedName,
     isReturnable,
     returnDate,
     actualReturnedDate,
     status,
     location: data.location.trim(),
     custodianUserId: custodianId,
-    receivedByPersonName: data.receivedByPersonName?.trim(),
+    receivedByPersonName: data.category === 'Received' ? data.receivedByPersonName?.trim() : undefined,
     receivedByPhone: data.receivedByPhone?.trim(),
-    notes: data.notes?.trim()
+    returnedToPersonName: data.category === 'Given' ? (data.receivedByPersonName?.trim() || data.returnedToPersonName?.trim()) : undefined,
+    notes: data.notes?.trim(),
+    movements: [initialMovement]
   });
 
   return (await PhysicalDocumentModel.findById(doc._id)
-    .populate('clientId', 'name email mobile')
+    .populate('clientId', 'name email mobile fileNo')
     .populate('custodianUserId', 'name email')) as IPhysicalDocument;
 };
 
@@ -407,6 +562,7 @@ export const returnPhysicalDocumentService = async (
   }
 
   doc.status = 'Returned';
+  doc.category = 'Given';
   doc.actualReturnedDate = returnData.actualReturnedDate
     ? new Date(returnData.actualReturnedDate)
     : new Date();
@@ -418,6 +574,37 @@ export const returnPhysicalDocumentService = async (
     doc.returnedNotes = returnData.returnedNotes.trim();
   }
 
+  // Initialize movements array if missing from legacy records
+  if (!doc.movements || doc.movements.length === 0) {
+    doc.movements = [
+      {
+        movementType: 'Received',
+        date: doc.date || doc.createdAt || new Date(),
+        location: doc.location || 'Office Storage',
+        custodianUserId: doc.custodianUserId,
+        receivedByPersonName: doc.receivedByPersonName,
+        receivedByPhone: doc.receivedByPhone,
+        isReturnable: doc.isReturnable,
+        returnDate: doc.returnDate,
+        notes: doc.notes || 'Initial custody record',
+        createdAt: doc.createdAt || new Date()
+      }
+    ];
+  }
+
+  doc.movements.push({
+    movementType: 'Given',
+    date: doc.actualReturnedDate,
+    location: doc.location,
+    custodianUserId: doc.custodianUserId,
+    returnedToPersonName: doc.returnedToPersonName,
+    isReturnable: doc.isReturnable,
+    returnDate: doc.returnDate,
+    actualReturnedDate: doc.actualReturnedDate,
+    notes: returnData.returnedNotes?.trim() || doc.notes,
+    createdAt: new Date()
+  });
+
   await doc.save();
 
   return (await PhysicalDocumentModel.findById(doc._id)
@@ -426,12 +613,19 @@ export const returnPhysicalDocumentService = async (
 };
 
 /**
- * Aggregates all storage locations with custody counts
+ * Aggregates all storage locations with custody counts and managed metadata
  */
 export const getStorageLocationsService = async (
   tenantId: mongoose.Types.ObjectId
 ) => {
-  const locations = await PhysicalDocumentModel.aggregate([
+  // 1. Fetch all managed StorageUnit records for tenant
+  const masterUnits = await StorageUnitModel.find({
+    tenantId,
+    isActive: { $ne: false }
+  }).lean();
+
+  // 2. Aggregate document counts by location
+  const aggregatedCounts = await PhysicalDocumentModel.aggregate([
     { $match: { tenantId } },
     {
       $group: {
@@ -447,21 +641,218 @@ export const getStorageLocationsService = async (
         },
         totalCount: { $sum: 1 }
       }
-    },
-    {
-      $project: {
-        _id: 0,
-        location: '$_id',
-        activeCount: 1,
-        overdueCount: 1,
-        returnedCount: 1,
-        totalCount: 1
-      }
-    },
-    { $sort: { activeCount: -1, overdueCount: -1, totalCount: -1, location: 1 } }
+    }
   ]);
 
-  return locations;
+  const countMap = new Map<
+    string,
+    { activeCount: number; overdueCount: number; returnedCount: number; totalCount: number }
+  >();
+
+  for (const c of aggregatedCounts) {
+    if (c._id && typeof c._id === 'string') {
+      countMap.set(c._id.trim().toLowerCase(), {
+        activeCount: c.activeCount || 0,
+        overdueCount: c.overdueCount || 0,
+        returnedCount: c.returnedCount || 0,
+        totalCount: c.totalCount || 0
+      });
+    }
+  }
+
+  // 3. Auto-backfill any distinct document location that is not yet in StorageUnitModel
+  const existingMasterNames = new Set(masterUnits.map((u) => u.name.trim().toLowerCase()));
+  for (const c of aggregatedCounts) {
+    if (c._id && typeof c._id === 'string' && c._id.trim()) {
+      const locKey = c._id.trim().toLowerCase();
+      if (!existingMasterNames.has(locKey)) {
+        try {
+          const autoCreated = await StorageUnitModel.create({
+            tenantId,
+            name: c._id.trim(),
+            unitType: 'Cabinet',
+            roomOrFloor: '',
+            description: 'Auto-registered from physical documents register'
+          });
+          masterUnits.push(autoCreated.toObject());
+          existingMasterNames.add(locKey);
+        } catch {
+          // ignore duplicate race condition
+        }
+      }
+    }
+  }
+
+  // 4. Combine master units with real-time document counts
+  const result = masterUnits.map((unit) => {
+    const locKey = unit.name.trim().toLowerCase();
+    const counts = countMap.get(locKey) || {
+      activeCount: 0,
+      overdueCount: 0,
+      returnedCount: 0,
+      totalCount: 0
+    };
+
+    return {
+      _id: unit._id,
+      location: unit.name,
+      code: unit.code || '',
+      unitType: unit.unitType || 'Cabinet',
+      roomOrFloor: unit.roomOrFloor || '',
+      description: unit.description || '',
+      activeCount: counts.activeCount,
+      overdueCount: counts.overdueCount,
+      returnedCount: counts.returnedCount,
+      totalCount: counts.totalCount,
+      isMaster: true
+    };
+  });
+
+  // Sort by activeCount descending, then location name ascending
+  result.sort((a, b) => {
+    if (b.activeCount !== a.activeCount) return b.activeCount - a.activeCount;
+    return a.location.localeCompare(b.location);
+  });
+
+  return result;
+};
+
+/**
+ * Creates a new physical storage unit in the office directory
+ */
+export const createStorageLocationService = async (
+  tenantId: mongoose.Types.ObjectId,
+  data: CreateStorageUnitInput
+) => {
+  const trimmedName = data.name?.trim();
+  if (!trimmedName || trimmedName.length < 2) {
+    throw new ApiError(400, 'Storage unit name must be at least 2 characters', 'VALIDATION_ERROR');
+  }
+
+  const escaped = trimmedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const existing = await StorageUnitModel.findOne({
+    tenantId,
+    name: { $regex: new RegExp(`^${escaped}$`, 'i') }
+  });
+
+  if (existing) {
+    throw new ApiError(409, `A storage unit named "${existing.name}" already exists.`, 'DUPLICATE_STORAGE_UNIT');
+  }
+
+  const unit = await StorageUnitModel.create({
+    tenantId,
+    name: trimmedName,
+    code: data.code?.trim(),
+    unitType: data.unitType || 'Cabinet',
+    roomOrFloor: data.roomOrFloor?.trim(),
+    description: data.description?.trim(),
+    isActive: true
+  });
+
+  return {
+    _id: unit._id,
+    location: unit.name,
+    code: unit.code || '',
+    unitType: unit.unitType,
+    roomOrFloor: unit.roomOrFloor || '',
+    description: unit.description || '',
+    activeCount: 0,
+    overdueCount: 0,
+    returnedCount: 0,
+    totalCount: 0,
+    isMaster: true
+  };
+};
+
+/**
+ * Updates an existing storage unit and optionally updates referenced documents
+ */
+export const updateStorageLocationService = async (
+  tenantId: mongoose.Types.ObjectId,
+  id: string,
+  data: UpdateStorageUnitInput
+) => {
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    throw new ApiError(400, 'Invalid storage unit ID format', 'VALIDATION_ERROR');
+  }
+
+  const unit = await StorageUnitModel.findOne({ _id: id, tenantId });
+  if (!unit) {
+    throw new ApiError(404, 'Storage unit not found', 'UNIT_NOT_FOUND');
+  }
+
+  const oldName = unit.name;
+  let newName = oldName;
+
+  if (data.name && data.name.trim() && data.name.trim() !== oldName) {
+    newName = data.name.trim();
+    const escaped = newName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const existing = await StorageUnitModel.findOne({
+      tenantId,
+      _id: { $ne: unit._id },
+      name: { $regex: new RegExp(`^${escaped}$`, 'i') }
+    });
+    if (existing) {
+      throw new ApiError(409, `A storage unit named "${existing.name}" already exists.`, 'DUPLICATE_STORAGE_UNIT');
+    }
+    unit.name = newName;
+  }
+
+  if (data.unitType) unit.unitType = data.unitType;
+  if (data.roomOrFloor !== undefined) unit.roomOrFloor = data.roomOrFloor.trim();
+  if (data.description !== undefined) unit.description = data.description.trim();
+  if (data.code !== undefined) unit.code = data.code.trim();
+
+  await unit.save();
+
+  // If name changed and updateReferencedDocs is enabled, update all physical documents and their movements
+  if (newName !== oldName && data.updateReferencedDocs !== false) {
+    await PhysicalDocumentModel.updateMany(
+      { tenantId, location: oldName },
+      { $set: { location: newName } }
+    );
+    await PhysicalDocumentModel.updateMany(
+      { tenantId, 'movements.location': oldName },
+      { $set: { 'movements.$[elem].location': newName } },
+      { arrayFilters: [{ 'elem.location': oldName }] }
+    );
+  }
+
+  return unit;
+};
+
+/**
+ * Deletes a storage unit if no active documents are in custody
+ */
+export const deleteStorageLocationService = async (
+  tenantId: mongoose.Types.ObjectId,
+  id: string
+) => {
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    throw new ApiError(400, 'Invalid storage unit ID format', 'VALIDATION_ERROR');
+  }
+
+  const unit = await StorageUnitModel.findOne({ _id: id, tenantId });
+  if (!unit) {
+    throw new ApiError(404, 'Storage unit not found', 'UNIT_NOT_FOUND');
+  }
+
+  // Check if any documents are actively in custody or overdue in this unit
+  const activeDocsCount = await PhysicalDocumentModel.countDocuments({
+    tenantId,
+    location: unit.name,
+    status: { $in: ['In Custody', 'Overdue'] }
+  });
+
+  if (activeDocsCount > 0) {
+    throw new ApiError(
+      400,
+      `Cannot delete storage unit "${unit.name}" because it currently holds ${activeDocsCount} physical document(s) in active custody. Please reassign or return the documents first.`,
+      'UNIT_HAS_ACTIVE_DOCUMENTS'
+    );
+  }
+
+  await StorageUnitModel.deleteOne({ _id: unit._id, tenantId });
 };
 
 /**
@@ -729,5 +1120,97 @@ export const generateHandoverSlipService = async (
       notes: doc.notes
     },
     html
+  };
+};
+
+/**
+ * Returns documents for a client that are available for a movement:
+ * - When category === 'Given': returns documents currently held by office (category 'Received' / In Custody / Overdue)
+ * - When category === 'Received': returns documents currently with client (category 'Given' / Returned)
+ */
+export const getAvailablePhysicalDocsForMovementService = async (
+  tenantId: mongoose.Types.ObjectId,
+  clientId: string,
+  category: DocumentCategory
+) => {
+  if (!mongoose.Types.ObjectId.isValid(clientId)) {
+    throw new ApiError(400, 'Invalid client ID', 'VALIDATION_ERROR');
+  }
+
+  const filter: any = {
+    tenantId,
+    clientId: new mongoose.Types.ObjectId(clientId)
+  };
+
+  if (category === 'Given') {
+    // Office currently holds these documents -> Available to hand over / give out
+    filter.$or = [
+      { category: 'Received' },
+      { status: { $in: ['In Custody', 'Overdue'] } }
+    ];
+  } else {
+    // category === 'Received'
+    // Documents previously handed over / given to client -> Available to receive back into custody
+    filter.$or = [
+      { category: 'Given' },
+      { status: 'Returned' }
+    ];
+  }
+
+  const docs = await PhysicalDocumentModel.find(filter)
+    .select('documentName documentType category status location isReturnable returnDate actualReturnedDate date movements')
+    .sort({ documentName: 1 })
+    .lean();
+
+  return docs;
+};
+
+/**
+ * Retrieves the complete chronological movement history for a document
+ */
+export const getDocumentMovementHistoryService = async (
+  tenantId: mongoose.Types.ObjectId,
+  id: string
+) => {
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    throw new ApiError(400, 'Invalid document ID format', 'VALIDATION_ERROR');
+  }
+
+  const doc = await PhysicalDocumentModel.findOne({ _id: id, tenantId })
+    .populate('clientId', 'name email mobile fileNo')
+    .populate('custodianUserId', 'name email')
+    .populate('movements.custodianUserId', 'name email')
+    .lean();
+
+  if (!doc) {
+    throw new ApiError(404, 'Physical document record not found', 'DOCUMENT_NOT_FOUND');
+  }
+
+  let movements = doc.movements || [];
+  if (movements.length === 0) {
+    movements = [
+      {
+        movementType: doc.category,
+        date: doc.date,
+        location: doc.location,
+        custodianUserId: doc.custodianUserId,
+        receivedByPersonName: doc.receivedByPersonName,
+        receivedByPhone: doc.receivedByPhone,
+        returnedToPersonName: doc.returnedToPersonName,
+        isReturnable: doc.isReturnable,
+        returnDate: doc.returnDate,
+        actualReturnedDate: doc.actualReturnedDate,
+        notes: doc.notes || 'Initial record',
+        createdAt: doc.createdAt
+      } as any
+    ];
+  }
+
+  // Sort movements chronologically (most recent first for history view)
+  movements.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  return {
+    document: doc,
+    movements
   };
 };
