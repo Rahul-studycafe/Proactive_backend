@@ -14,10 +14,10 @@ const router = Router();
 // Protect all package routes
 router.use(authenticate);
 
-router.post('/', authorize('package', 'create'), createPackage);
-router.get('/', authorize('package', 'view'), getPackages);
-router.get('/:id', authorize('package', 'view'), getPackageById);
-router.put('/:id', authorize('package', 'edit'), updatePackage);
-router.delete('/:id', authorize('package', 'delete'), deletePackage);
+router.post('/', authorize('package:create'), createPackage);
+router.get('/', authorize('package:view'), getPackages);
+router.get('/:id', authorize('package:view'), getPackageById);
+router.put('/:id', authorize('package:edit'), updatePackage);
+router.delete('/:id', authorize('package:delete'), deletePackage);
 
 export default router;

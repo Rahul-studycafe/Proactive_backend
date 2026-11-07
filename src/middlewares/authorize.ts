@@ -1,57 +1,76 @@
 import { Request, Response, NextFunction } from 'express';
 import { ApiError } from '../common/errors/api-error';
-import { Role, IRole } from '../modules/roles/schemas';
+import { PermissionResolverService } from '../services/permission-resolver.service';
 
 /**
  * Middleware factory for Role-Based and Scope-Based Access Control.
- * 
- * @param moduleName The top-level module in the permissions matrix (e.g. 'client', 'task')
- * @param actionName The specific action (e.g. 'create', 'view')
+ * Accepts canonical "resource:action" (e.g. 'client:create'),
+ * an array of alternative permissions (e.g. ['client:services_manage', 'client:edit']),
+ * or legacy (moduleName, actionName) (e.g. 'client', 'create').
  */
-export const authorize = (moduleName: keyof IRole['permissions'], actionName: string) => {
+export const authorize = (
+  permissionOrModule: string | string[],
+  legacyAction?: string
+) => {
+  const permissions: string[] = Array.isArray(permissionOrModule)
+    ? permissionOrModule
+    : legacyAction
+      ? [`${permissionOrModule}:${legacyAction}`]
+      : [permissionOrModule];
+
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      if (!req.user) {
+      if (!req.user || !req.tenantId) {
         throw new ApiError(401, 'Unauthorized', 'UNAUTHORIZED');
       }
 
-      // Fetch the role. We use skipTenantPlugin because req.tenantId is already attached,
-      // but it's cleaner since we explicitly query by roleId.
-      const role = await Role.findById(req.user.roleId).setOptions({ skipTenantPlugin: true });
-      
-      if (!role) {
-        throw new ApiError(403, 'Role not found', 'FORBIDDEN');
-      }
+      const effectiveState = await PermissionResolverService.resolveUserPermissions(
+        req.user._id.toString(),
+        req.tenantId.toString()
+      );
 
       // Super Admins bypass all matrix checks
-      if (role.isSuperAdmin) {
+      if (effectiveState.isSuperAdmin) {
         req.permissionScope = 'everything';
         req.scopeFilter = {};
         return next();
       }
 
-      // 1. RBAC Matrix Check
-      const modulePerms = role.permissions[moduleName as keyof typeof role.permissions];
-      if (!modulePerms) {
-         throw new ApiError(403, `Unknown permission module: ${moduleName}`, 'FORBIDDEN');
+      // Check if ANY of the requested permissions is allowed
+      const allowedPerm = permissions
+        .map((p) => effectiveState.permissions[p])
+        .find((p) => p && p.allowed);
+
+      if (!allowedPerm) {
+        throw new ApiError(
+          403,
+          `Access Denied: Missing '${permissions.join("' or '")}' permission`,
+          'FORBIDDEN'
+        );
       }
 
-      const actionPerm = (modulePerms as any)[actionName];
-      if (!actionPerm || actionPerm.allowed !== true) {
-         throw new ApiError(403, 'You do not have permission to perform this action', 'FORBIDDEN');
-      }
-
-      // 2. SBAC (Scope-Based) Injection
-      const scope = actionPerm.scope;
+      // Inject data-level scope filters for controllers
+      const scope = allowedPerm.scope || 'everything';
       req.permissionScope = scope;
 
       if (scope === 'assigned_only') {
-         req.scopeFilter = { assignedUserId: req.user._id };
+        req.scopeFilter = {
+          $or: [
+            { assignedUsers: req.user._id },
+            { assigneeIds: req.user._id },
+            { assignedUserId: req.user._id },
+            { createdBy: req.user._id }
+          ]
+        };
       } else if (scope === 'team_only') {
-         req.scopeFilter = { teamMembers: req.user._id };
+        req.scopeFilter = {
+          $or: [
+            { departmentId: req.user.departmentId },
+            { teamMembers: req.user._id }
+          ]
+        };
       } else {
-         // 'everything'
-         req.scopeFilter = {};
+        req.scopeFilter = {};
       }
 
       next();

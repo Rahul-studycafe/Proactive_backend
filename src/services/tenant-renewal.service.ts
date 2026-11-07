@@ -1,12 +1,14 @@
 import mongoose from 'mongoose';
 import { TenantSubscription } from '../models/TenantSubscription';
 import { User } from '../modules/auth/schemas';
+import { Organization } from '../modules/auth/schemas/organization.schema';
 import { Client } from '../modules/clients/schemas/client.schema';
 import { DocumentModel } from '../models/Document';
 
 export interface TenantUsageSummary {
   planTier: string;
   status: string;
+  subscriptionDuration?: string;
   currentPeriodStart: Date;
   currentPeriodEnd: Date;
   daysUntilRenewal: number;
@@ -41,26 +43,44 @@ export class TenantRenewalService {
    * Phase 145: Aggregates real-time tenant resource consumption vs plan limits.
    */
   static async getTenantUsage(tenantId: mongoose.Types.ObjectId): Promise<TenantUsageSummary> {
+    const org = await Organization.findById(tenantId);
     let sub: any = await TenantSubscription.findOne({ tenantId });
 
+    const maxUsersFromOrg = org?.plan?.maxUsers || 5;
+    const renewalDateFromOrg = org?.renewalDate || new Date(Date.now() + 30 * 86400 * 1000);
+    const orgStatus = org?.subscriptionStatus || 'active';
+    const statusFormatted = orgStatus.charAt(0).toUpperCase() + orgStatus.slice(1);
+    const tierName = maxUsersFromOrg <= 5 ? 'Starter' : maxUsersFromOrg <= 15 ? 'Professional' : 'Enterprise';
+
     if (!sub) {
-      // Default to standard starter baseline if not explicitly initialized
+      // Default to organization plan baseline if explicit TenantSubscription not yet created
       sub = {
-        planTier: 'Starter',
-        status: 'Active',
-        maxUsers: 5,
-        maxClients: 100,
-        storageLimitGb: 10,
-        currentPeriodStart: new Date(),
-        currentPeriodEnd: new Date(Date.now() + 30 * 86400 * 1000),
+        planTier: tierName,
+        status: statusFormatted,
+        maxUsers: maxUsersFromOrg,
+        maxClients: Math.max(100, maxUsersFromOrg * 25),
+        storageLimitGb: maxUsersFromOrg <= 5 ? 10 : maxUsersFromOrg <= 15 ? 25 : 100,
+        currentPeriodStart: org?.createdAt || new Date(),
+        currentPeriodEnd: renewalDateFromOrg,
         featuresEnabled: {
           clientPortal: true,
           timeTracking: true,
           multiBranch: true,
-          customDomain: false,
-          bulkWhatsApp: false
+          customDomain: maxUsersFromOrg > 15,
+          bulkWhatsApp: maxUsersFromOrg > 5
         }
       } as any;
+    } else {
+      // Ensure maxUsers, renewal date, and status reflect organization plan
+      if (org?.plan?.maxUsers && (!sub.maxUsers || sub.maxUsers < org.plan.maxUsers)) {
+        sub.maxUsers = org.plan.maxUsers;
+      }
+      if (org?.renewalDate) {
+        sub.currentPeriodEnd = org.renewalDate;
+      }
+      if (org?.subscriptionStatus) {
+        sub.status = statusFormatted;
+      }
     }
 
     const [activeUsers, totalClients, totalDocs] = await Promise.all([
@@ -80,8 +100,9 @@ export class TenantRenewalService {
     const storagePct = sub.storageLimitGb > 0 ? Math.min(100, Math.round((estimatedStorageGb / sub.storageLimitGb) * 100)) : 0;
 
     return {
-      planTier: sub.planTier,
-      status: sub.status,
+      planTier: sub.planTier || tierName,
+      status: sub.status || statusFormatted,
+      subscriptionDuration: org?.subscriptionDuration || 'monthly',
       currentPeriodStart: sub.currentPeriodStart,
       currentPeriodEnd: sub.currentPeriodEnd,
       daysUntilRenewal,

@@ -12,13 +12,13 @@ import { authorize } from '../middlewares/authorize';
 const router = Router();
 
 // Scanning & Batch Operations (before /:id)
-router.post('/trigger-scan', authorize('client', 'edit'), triggerExpiredScan);
+router.post('/trigger-scan', authorize('document:request'), triggerExpiredScan);
 
 // Staff Document Request CRUD & Lifecycle
-router.post('/', authorize('client', 'create'), createDocumentRequest);
-router.get('/', authorize('client', 'view'), getDocumentRequestList);
-router.get('/:id', authorize('client', 'view'), getDocumentRequestById);
-router.post('/:id/resend', authorize('client', 'edit'), resendDocumentRequest);
-router.delete('/:id', authorize('client', 'delete'), cancelDocumentRequest);
+router.post('/', authorize('document:request'), createDocumentRequest);
+router.get('/', authorize('document:request'), getDocumentRequestList);
+router.get('/:id', authorize('document:request'), getDocumentRequestById);
+router.post('/:id/resend', authorize('document:request'), resendDocumentRequest);
+router.delete('/:id', authorize('document:request'), cancelDocumentRequest);
 
 export default router;

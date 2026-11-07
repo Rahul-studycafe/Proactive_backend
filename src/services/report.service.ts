@@ -172,6 +172,7 @@ export const getTaskReport = async (tenantId: Types.ObjectId, query: TaskReportQ
               client: {
                 _id: '$clientDoc._id',
                 name: '$clientDoc.name',
+                clientNumber: { $ifNull: ['$clientDoc.clientNumber', '$clientDoc.fileNo'] },
                 fileNo: '$clientDoc.fileNo'
               },
               service: {

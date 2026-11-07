@@ -1,5 +1,13 @@
 import { Router } from 'express';
-import { createRole, getRoles, getRoleById, updateRole, deleteRole } from '../modules/roles/controllers/role.controller';
+import {
+  createRole,
+  getRoles,
+  getRoleById,
+  updateRole,
+  deleteRole,
+  getPermissionsCatalogue,
+  duplicateRole,
+} from '../modules/roles/controllers/role.controller';
 import { authenticate } from '../middlewares/authenticate';
 import { authorize } from '../middlewares/authorize';
 
@@ -8,19 +16,17 @@ const router = Router();
 // All role routes require authentication
 router.use(authenticate);
 
-// Get all roles
-router.get('/', authorize('settings', 'view'), getRoles);
+// Get full permission catalogue & blueprint definitions for UI
+router.get('/catalogue', authorize('role:view'), getPermissionsCatalogue);
 
-// Get single role
-router.get('/:id', authorize('settings', 'view'), getRoleById);
+// Duplicate a role
+router.post('/:id/duplicate', authorize('role:manage'), duplicateRole);
 
-// Create a new role
-router.post('/', authorize('settings', 'manageMasters'), createRole);
-
-// Update role
-router.put('/:id', authorize('settings', 'manageMasters'), updateRole);
-
-// Delete role
-router.delete('/:id', authorize('settings', 'manageMasters'), deleteRole);
+// Standard Role CRUD
+router.get('/', authorize('role:view'), getRoles);
+router.get('/:id', authorize('role:view'), getRoleById);
+router.post('/', authorize('role:manage'), createRole);
+router.put('/:id', authorize('role:manage'), updateRole);
+router.delete('/:id', authorize('role:manage'), deleteRole);
 
 export default router;

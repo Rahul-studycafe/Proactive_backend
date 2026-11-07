@@ -649,7 +649,7 @@ export class PaymentGatewayService {
 
     const [transactions, total] = await Promise.all([
       PaymentTransaction.find(query)
-        .populate('clientId', 'name fileNo gstin')
+        .populate('clientId', 'name clientNumber fileNo gstin')
         .populate('invoiceId', 'invoiceNo totals')
         .populate('receiptId', 'receiptNo totalAmount')
         .sort({ createdAt: -1 })

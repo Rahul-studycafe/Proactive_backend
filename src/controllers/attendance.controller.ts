@@ -15,6 +15,7 @@ import {
   getStaffAttendanceSummaryService,
   exportMonthlyAttendanceService
 } from '../services/attendance.service';
+import { PermissionResolverService } from '../services/permission-resolver.service';
 
 const checkInSchema = z.object({
   date: z
@@ -245,8 +246,8 @@ const monthlyMatrixQuerySchema = z.object({
 
 export const getMonthlyMatrix = asyncHandler(
   async (req: Request, res: Response) => {
-    if (!req.tenantId) {
-      throw new ApiError(403, 'Tenant context missing', 'FORBIDDEN');
+    if (!req.tenantId || !req.user) {
+      throw new ApiError(403, 'Tenant context or authentication missing', 'FORBIDDEN');
     }
 
     const parsed = monthlyMatrixQuerySchema.safeParse(req.query);
@@ -255,13 +256,29 @@ export const getMonthlyMatrix = asyncHandler(
       throw new ApiError(400, `Validation Error: ${issues}`, 'VALIDATION_FAILED');
     }
 
+    // Determine data scope: if user has firm matrix permission vs self only
+    const state = await PermissionResolverService.resolveUserPermissions(
+      req.user._id.toString(),
+      req.tenantId.toString()
+    );
+
+    const canViewFirmMatrix =
+      state.isSuperAdmin ||
+      Boolean(state.permissions['attendance:matrix_view']?.allowed) ||
+      Boolean(state.permissions['attendance:view_all']?.allowed) ||
+      Boolean(state.permissions['attendance:manage']?.allowed);
+
+    // If user only has own matrix permission, scope queries strictly to self
+    const targetUserId = canViewFirmMatrix ? undefined : req.user._id;
+
     const result = await getMonthlyMatrixService(
       req.tenantId,
       parsed.data.month,
       parsed.data.year,
       parsed.data.departmentId,
       parsed.data.page,
-      parsed.data.limit
+      parsed.data.limit,
+      targetUserId
     );
 
     return sendSuccess(res, 200, 'Monthly attendance matrix retrieved', result);

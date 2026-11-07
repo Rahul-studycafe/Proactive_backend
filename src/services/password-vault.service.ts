@@ -162,7 +162,7 @@ export async function getClientPasswordsService(
 
   const [rawPasswords, total] = await Promise.all([
     ClientPassword.find(query)
-      .populate('clientId', 'name fileNo pan gstin')
+      .populate('clientId', 'name clientNumber fileNo pan gstin')
       .populate('createdBy', 'name')
       .populate('updatedBy', 'name')
       .sort({ updatedAt: -1 })
@@ -207,7 +207,7 @@ export async function getClientPasswordByIdService(
   id: string
 ): Promise<any> {
   const item = await ClientPassword.findOne({ _id: id, tenantId })
-    .populate('clientId', 'name fileNo pan gstin')
+    .populate('clientId', 'name clientNumber fileNo pan gstin')
     .populate('createdBy', 'name')
     .populate('updatedBy', 'name')
     .lean();
@@ -348,7 +348,7 @@ export async function getPasswordAuditLogsService(
 
   const [logs, total] = await Promise.all([
     PasswordAuditLog.find(query)
-      .populate('clientId', 'name fileNo')
+      .populate('clientId', 'name clientNumber fileNo')
       .populate('accessedByUserId', 'name email role')
       .sort({ accessedAt: -1 })
       .skip(skip)
@@ -395,12 +395,13 @@ export async function bulkImportPasswordsService(
     return { totalRows: 0, importedCount: 0, updatedCount: 0, skippedErrors: ['No data rows found in worksheet'] };
   }
 
-  // Pre-fetch all clients for fast in-memory lookup by File No or Name
-  const clients = await Client.find({ tenantId }).select('_id name fileNo').lean();
+  // Pre-fetch all clients for fast in-memory lookup by File No or Client Number or Name
+  const clients = await Client.find({ tenantId }).select('_id name clientNumber fileNo').lean();
   const clientMapByFileNo = new Map<string, mongoose.Types.ObjectId>();
   const clientMapByName = new Map<string, mongoose.Types.ObjectId>();
 
   for (const c of clients) {
+    if (c.clientNumber) clientMapByFileNo.set(c.clientNumber.toLowerCase().trim(), c._id as mongoose.Types.ObjectId);
     if (c.fileNo) clientMapByFileNo.set(c.fileNo.toLowerCase().trim(), c._id as mongoose.Types.ObjectId);
     if (c.name) clientMapByName.set(c.name.toLowerCase().trim(), c._id as mongoose.Types.ObjectId);
   }

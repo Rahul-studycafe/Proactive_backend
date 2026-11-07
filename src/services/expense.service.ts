@@ -141,7 +141,7 @@ export class ExpenseService {
     await expense.save();
 
     return (await Expense.findById(expense._id)
-      .populate('clientId', 'name fileNo pan email mobile')
+      .populate('clientId', 'name clientNumber fileNo pan email mobile')
       .populate('categoryId', 'name')
       .populate('taskId', 'title status')
       .populate('createdBy', 'name email')) as IExpense;
@@ -201,7 +201,7 @@ export class ExpenseService {
     // Execute queries in parallel
     const [expenses, total, summaryAgg] = await Promise.all([
       Expense.find(filter)
-        .populate('clientId', 'name fileNo pan email mobile')
+        .populate('clientId', 'name clientNumber fileNo pan email mobile')
         .populate('categoryId', 'name')
         .populate('taskId', 'title status')
         .populate('invoiceId', 'invoiceNo date status')
@@ -249,7 +249,7 @@ export class ExpenseService {
    */
   static async getExpenseById(tenantId: mongoose.Types.ObjectId, expenseId: string): Promise<IExpense> {
     const expense = await Expense.findOne({ _id: expenseId, tenantId })
-      .populate('clientId', 'name fileNo pan email mobile')
+      .populate('clientId', 'name clientNumber fileNo pan email mobile')
       .populate('categoryId', 'name')
       .populate('taskId', 'title status')
       .populate('invoiceId', 'invoiceNo date status totals')

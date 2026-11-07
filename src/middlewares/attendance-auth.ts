@@ -1,16 +1,168 @@
 import { Request, Response, NextFunction } from 'express';
 import { ApiError } from '../common/errors/api-error';
-import { Role } from '../modules/roles/schemas';
+import { PermissionResolverService } from '../services/permission-resolver.service';
 import { User } from '../modules/auth/schemas';
 
 /**
- * Middleware enforcing Attendance Permissions and Scope-Based Access Control (Phase 59):
- * - SuperAdmin: Allowed full access.
- * - Strict Deny-by-Default: Non-admin roles must have explicit attendance permissions.
- * - Role with `attendance.manage.allowed === true`:
- *   - Scope `everything`: Can mark for anyone, view monthly grid, and trigger bulk updates.
- *   - Scope `team_only`: If targeting another user, must share the same department or report to req.user._id.
- * - Role with `attendance.view_self.allowed === true`: Can only check in/out for themselves and view their own monthly history.
+ * Middleware ensuring user has permission to view firm-wide attendance desk or manage attendance.
+ */
+export const requireAttendanceViewAll = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (!req.user || !req.tenantId) {
+      throw new ApiError(401, 'Unauthorized', 'UNAUTHORIZED');
+    }
+
+    const state = await PermissionResolverService.resolveUserPermissions(
+      req.user._id.toString(),
+      req.tenantId.toString()
+    );
+
+    if (state.isSuperAdmin) {
+      return next();
+    }
+
+    if (
+      state.permissions['attendance:view_all']?.allowed ||
+      state.permissions['attendance:manage']?.allowed
+    ) {
+      return next();
+    }
+
+    throw new ApiError(
+      403,
+      "Access Denied: Missing 'attendance:view_all' permission to view firm attendance desk",
+      'FORBIDDEN'
+    );
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Middleware ensuring user has permission to view monthly attendance matrix.
+ */
+export const requireAttendanceMatrixView = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (!req.user || !req.tenantId) {
+      throw new ApiError(401, 'Unauthorized', 'UNAUTHORIZED');
+    }
+
+    const state = await PermissionResolverService.resolveUserPermissions(
+      req.user._id.toString(),
+      req.tenantId.toString()
+    );
+
+    if (state.isSuperAdmin) {
+      return next();
+    }
+
+    if (
+      state.permissions['attendance:matrix_view']?.allowed ||
+      state.permissions['attendance:matrix_view_self']?.allowed ||
+      state.permissions['attendance:view_all']?.allowed ||
+      state.permissions['attendance:manage']?.allowed
+    ) {
+      return next();
+    }
+
+    throw new ApiError(
+      403,
+      "Access Denied: Missing 'attendance:matrix_view' or 'attendance:matrix_view_self' permission to view monthly matrix",
+      'FORBIDDEN'
+    );
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Middleware ensuring user has permission to export payroll / attendance CSV.
+ */
+export const requireAttendanceExport = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (!req.user || !req.tenantId) {
+      throw new ApiError(401, 'Unauthorized', 'UNAUTHORIZED');
+    }
+
+    const state = await PermissionResolverService.resolveUserPermissions(
+      req.user._id.toString(),
+      req.tenantId.toString()
+    );
+
+    if (state.isSuperAdmin) {
+      return next();
+    }
+
+    if (
+      state.permissions['attendance:export_payroll']?.allowed ||
+      state.permissions['attendance:manage']?.allowed
+    ) {
+      return next();
+    }
+
+    throw new ApiError(
+      403,
+      "Access Denied: Missing 'attendance:export_payroll' permission",
+      'FORBIDDEN'
+    );
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Middleware ensuring user can add manual attendance entries or adjust records.
+ */
+export const requireAttendanceManualEntry = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    if (!req.user || !req.tenantId) {
+      throw new ApiError(401, 'Unauthorized', 'UNAUTHORIZED');
+    }
+
+    const state = await PermissionResolverService.resolveUserPermissions(
+      req.user._id.toString(),
+      req.tenantId.toString()
+    );
+
+    if (state.isSuperAdmin) {
+      return next();
+    }
+
+    if (
+      state.permissions['attendance:manual_entry']?.allowed ||
+      state.permissions['attendance:manage']?.allowed
+    ) {
+      return next();
+    }
+
+    throw new ApiError(
+      403,
+      "Access Denied: Missing 'attendance:manual_entry' permission to record or adjust attendance",
+      'FORBIDDEN'
+    );
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * Middleware ensuring user can perform management/bulk actions.
  */
 export const requireAttendanceManage = async (
   req: Request,
@@ -18,103 +170,73 @@ export const requireAttendanceManage = async (
   next: NextFunction
 ) => {
   try {
-    if (!req.user) {
+    if (!req.user || !req.tenantId) {
       throw new ApiError(401, 'Unauthorized', 'UNAUTHORIZED');
     }
 
-    const role = await Role.findById(req.user.roleId).setOptions({
-      skipTenantPlugin: true
-    });
-    if (!role) {
-      throw new ApiError(403, 'Role not found', 'FORBIDDEN');
-    }
+    const state = await PermissionResolverService.resolveUserPermissions(
+      req.user._id.toString(),
+      req.tenantId.toString()
+    );
 
-    if (role.isSuperAdmin) {
+    if (state.isSuperAdmin) {
       return next();
     }
 
-    const attPerms = role.permissions?.attendance as any;
-    if (!attPerms?.manage?.allowed) {
-      throw new ApiError(
-        403,
-        'You do not have permission to perform management actions on attendance',
-        'FORBIDDEN'
-      );
+    if (state.permissions['attendance:manage']?.allowed) {
+      return next();
     }
 
-    next();
+    throw new ApiError(
+      403,
+      "Access Denied: Missing 'attendance:manage' permission",
+      'FORBIDDEN'
+    );
   } catch (err) {
     next(err);
   }
 };
 
+/**
+ * Middleware allowing users to view their own attendance summary,
+ * or allowing managers with attendance:view_all / attendance:manage to view any staff member's summary.
+ */
 export const requireAttendanceSelfOrManage = (paramOrBodyKey: 'params' | 'body') => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      if (!req.user) {
+      if (!req.user || !req.tenantId) {
         throw new ApiError(401, 'Unauthorized', 'UNAUTHORIZED');
       }
 
-      const role = await Role.findById(req.user.roleId).setOptions({
-        skipTenantPlugin: true
-      });
-      if (!role) {
-        throw new ApiError(403, 'Role not found', 'FORBIDDEN');
-      }
-
-      if (role.isSuperAdmin) {
-        return next();
-      }
-
-      const attPerms = role.permissions?.attendance as any;
-      if (!attPerms) {
-        throw new ApiError(
-          403,
-          'You do not have permission to access attendance records',
-          'FORBIDDEN'
-        );
-      }
-
       const targetUserId =
-        paramOrBodyKey === 'params'
-          ? req.params.userId
-          : req.body?.userId;
+        paramOrBodyKey === 'params' ? req.params.userId : req.body?.userId;
 
-      if (attPerms.manage?.allowed === true) {
-        if (
-          attPerms.manage.scope === 'team_only' &&
-          targetUserId &&
-          targetUserId.toString() !== req.user._id.toString()
-        ) {
-          const target = await User.findById(targetUserId).select('departmentId managerId');
-          const isSameDept =
-            req.user.departmentId &&
-            target?.departmentId &&
-            req.user.departmentId.toString() === target.departmentId.toString();
-          const isDirectReport =
-            target?.managerId && target.managerId.toString() === req.user._id.toString();
-
-          if (!isSameDept && !isDirectReport) {
-            throw new ApiError(403, 'Cannot access attendance outside your team', 'FORBIDDEN');
-          }
-        }
+      // Self-access is always permitted if user has attendance:view_self
+      if (targetUserId && targetUserId.toString() === req.user._id.toString()) {
         return next();
       }
 
-      if (attPerms.view_self?.allowed === true) {
-        if (targetUserId && targetUserId.toString() !== req.user._id.toString()) {
-          throw new ApiError(
-            403,
-            'You do not have permission to view or modify other employees attendance records',
-            'FORBIDDEN'
-          );
-        }
+      const state = await PermissionResolverService.resolveUserPermissions(
+        req.user._id.toString(),
+        req.tenantId.toString()
+      );
+
+      if (state.isSuperAdmin) {
+        return next();
+      }
+
+      // If targeting another user, requires view_all, matrix_view, or manage
+      if (
+        state.permissions['attendance:view_all']?.allowed ||
+        state.permissions['attendance:matrix_view']?.allowed ||
+        state.permissions['attendance:manage']?.allowed
+      ) {
         return next();
       }
 
       throw new ApiError(
         403,
-        'You do not have permission to access attendance records',
+        'You do not have permission to view other staff members attendance records',
         'FORBIDDEN'
       );
     } catch (err) {

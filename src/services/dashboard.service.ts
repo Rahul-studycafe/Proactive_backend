@@ -3,6 +3,7 @@ import { Client } from '../modules/clients/schemas';
 import { Task } from '../models/Task';
 import { Invoice } from '../models/Invoice';
 import { Receipt } from '../models/Receipt';
+import { Attendance } from '../models/Attendance';
 import {
   getClientDistributionService,
   getStaffPerformanceLeaderboardService,
@@ -10,9 +11,16 @@ import {
   getUpcomingHolidaysService
 } from './analytics.service';
 import { getRedisClient } from '../config/redis';
+import { PermissionResolverService } from './permission-resolver.service';
 
-export const getDashboardMetrics = async (tenantId: mongoose.Types.ObjectId) => {
-  const cacheKey = `dashboard:overview:${tenantId.toString()}`;
+export const getDashboardMetrics = async (
+  tenantId: mongoose.Types.ObjectId,
+  user?: any
+) => {
+  const userIdStr = user?._id ? user._id.toString() : '';
+  const cacheKey = userIdStr
+    ? `dashboard:overview:${tenantId.toString()}:${userIdStr}`
+    : `dashboard:overview:${tenantId.toString()}`;
   const redis = getRedisClient();
 
   try {
@@ -26,9 +34,55 @@ export const getDashboardMetrics = async (tenantId: mongoose.Types.ObjectId) => 
     // Gracefully ignore Redis read errors
   }
 
-  const now = new Date();
+  // 1. Resolve Effective Permissions
+  let effectiveState: any = null;
+  if (user && user._id) {
+    try {
+      effectiveState = await PermissionResolverService.resolveUserPermissions(
+        userIdStr,
+        tenantId.toString()
+      );
+    } catch (e) {
+      // Ignore error, fallback
+    }
+  }
 
-  // Execute all Phase 1 & Phase 2 queries in parallel for maximum performance
+  const isSuperAdmin = effectiveState ? effectiveState.isSuperAdmin : true;
+  const canViewClients = isSuperAdmin || Boolean(effectiveState?.permissions?.['client:view']?.allowed);
+  const canViewTasks = isSuperAdmin || Boolean(effectiveState?.permissions?.['task:view']?.allowed);
+  const taskScope = isSuperAdmin ? 'everything' : (effectiveState?.permissions?.['task:view']?.scope || 'everything');
+  const canViewInvoices = isSuperAdmin || Boolean(effectiveState?.permissions?.['invoice:view']?.allowed);
+  const canViewReceipts = isSuperAdmin || Boolean(effectiveState?.permissions?.['receipt:view']?.allowed);
+  const canViewAttendanceAll = isSuperAdmin || Boolean(effectiveState?.permissions?.['attendance:view_all']?.allowed);
+  const canViewAttendanceSelf = isSuperAdmin || Boolean(effectiveState?.permissions?.['attendance:view_self']?.allowed);
+
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+
+  // Task filter according to user permission scope
+  const pendingTasksFilter: any = {
+    tenantId,
+    status: { $in: ['Pending', 'In Progress', 'Under Review'] }
+  };
+  const completedTasksFilter: any = {
+    tenantId,
+    status: 'Completed'
+  };
+
+  if (taskScope === 'assigned_only' && user?._id) {
+    const userObjId = new mongoose.Types.ObjectId(userIdStr);
+    const assignedClause = {
+      $or: [
+        { assignedUserId: userObjId },
+        { assigneeIds: userObjId },
+        { createdBy: userObjId }
+      ]
+    };
+    pendingTasksFilter.$and = [assignedClause];
+    completedTasksFilter.$and = [assignedClause];
+  }
+
+  // Execute queries selectively based on permissions
   const [
     totalClients,
     pendingTasks,
@@ -41,68 +95,100 @@ export const getDashboardMetrics = async (tenantId: mongoose.Types.ObjectId) => 
     clientDistribution,
     staffLeaderboard,
     attendanceOverview,
+    myAttendanceRecord,
     upcomingHolidays
   ] = await Promise.all([
-    Client.countDocuments({ tenantId, isActive: true }),
-    Task.countDocuments({
-      tenantId,
-      status: { $in: ['Pending', 'In Progress', 'Under Review'] }
-    }),
-    Invoice.countDocuments({
-      tenantId,
-      status: { $in: ['Unpaid', 'Partially Paid'] },
-      dueDate: { $lt: now }
-    }),
-    Invoice.aggregate([
-      {
-        $match: {
+    // Clients
+    canViewClients ? Client.countDocuments({ tenantId, isActive: true }) : Promise.resolve(0),
+
+    // Pending Tasks
+    canViewTasks ? Task.countDocuments(pendingTasksFilter) : Promise.resolve(0),
+
+    // Invoices & Receivables
+    canViewInvoices
+      ? Invoice.countDocuments({
           tenantId,
-          status: { $in: ['Unpaid', 'Partially Paid'] }
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: '$totals.amountDue' }
-        }
-      }
-    ]),
-    Task.aggregate([
-      {
-        $match: {
-          tenantId,
-          isBilled: false,
-          isBillable: true
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: '$billingAmount' }
-        }
-      }
-    ]),
-    Invoice.find({ tenantId })
-      .populate('clientId', 'name fileNo')
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .select('invoiceNo date totals status clientId')
-      .lean(),
-    Receipt.find({ tenantId })
-      .populate('clientId', 'name fileNo')
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .select('receiptNo date totalAmount paymentMode clientId')
-      .lean(),
-    Task.find({ tenantId, status: 'Completed' })
-      .populate('clientId', 'name')
-      .sort({ updatedAt: -1 })
-      .limit(5)
-      .select('title status billingAmount clientId updatedAt')
-      .lean(),
-    getClientDistributionService(tenantId),
+          status: { $in: ['Unpaid', 'Partially Paid'] },
+          dueDate: { $lt: now }
+        })
+      : Promise.resolve(0),
+    canViewInvoices
+      ? Invoice.aggregate([
+          {
+            $match: {
+              tenantId,
+              status: { $in: ['Unpaid', 'Partially Paid'] }
+            }
+          },
+          {
+            $group: {
+              _id: null,
+              total: { $sum: '$totals.amountDue' }
+            }
+          }
+        ])
+      : Promise.resolve([]),
+    canViewInvoices
+      ? Task.aggregate([
+          {
+            $match: {
+              tenantId,
+              isBilled: false,
+              isBillable: true
+            }
+          },
+          {
+            $group: {
+              _id: null,
+              total: { $sum: '$billingAmount' }
+            }
+          }
+        ])
+      : Promise.resolve([]),
+
+    // Recent Activity Streams
+    canViewInvoices
+      ? Invoice.find({ tenantId })
+          .populate('clientId', 'name clientNumber fileNo')
+          .sort({ createdAt: -1 })
+          .limit(5)
+          .select('invoiceNo date totals status clientId')
+          .lean()
+      : Promise.resolve([]),
+    canViewReceipts
+      ? Receipt.find({ tenantId })
+          .populate('clientId', 'name clientNumber fileNo')
+          .sort({ createdAt: -1 })
+          .limit(5)
+          .select('receiptNo date totalAmount paymentMode clientId')
+          .lean()
+      : Promise.resolve([]),
+    canViewTasks
+      ? Task.find(completedTasksFilter)
+          .populate('clientId', 'name')
+          .sort({ updatedAt: -1 })
+          .limit(5)
+          .select('title status billingAmount clientId updatedAt')
+          .lean()
+      : Promise.resolve([]),
+
+    // Client Distribution
+    canViewClients ? getClientDistributionService(tenantId) : Promise.resolve([]),
+
+    // Staff Leaderboard
     getStaffPerformanceLeaderboardService(tenantId),
-    getAttendanceOverviewService(tenantId),
+
+    // Attendance
+    canViewAttendanceAll ? getAttendanceOverviewService(tenantId) : Promise.resolve(null),
+    !canViewAttendanceAll && canViewAttendanceSelf && user?._id
+      ? Attendance.findOne({
+          tenantId,
+          userId: new mongoose.Types.ObjectId(userIdStr),
+          date: todayStr
+        }).lean()
+      : Promise.resolve(null),
+
+    // Upcoming Holidays
     getUpcomingHolidaysService(tenantId, 5)
   ]);
 
@@ -116,17 +202,36 @@ export const getDashboardMetrics = async (tenantId: mongoose.Types.ObjectId) => 
       ? Math.round(unbilledTasksAgg[0].total * 100) / 100
       : 0;
 
+  let myAttendanceToday: any = null;
+  if (myAttendanceRecord) {
+    myAttendanceToday = {
+      status: myAttendanceRecord.status,
+      checkIn: myAttendanceRecord.checkIn,
+      checkOut: myAttendanceRecord.checkOut,
+      totalMinutes: myAttendanceRecord.totalMinutes || 0
+    };
+  } else if (!canViewAttendanceAll && canViewAttendanceSelf) {
+    myAttendanceToday = {
+      status: 'Unmarked',
+      checkIn: null,
+      checkOut: null,
+      totalMinutes: 0
+    };
+  }
+
   const result = {
+    isStaffWorkspace: !canViewInvoices && !canViewAttendanceAll,
     quickStats: {
-      totalClients,
-      pendingTasks,
-      overdueInvoices,
-      totalReceivables,
-      totalUnbilled
+      totalClients: canViewClients ? totalClients : null,
+      pendingTasks: canViewTasks ? pendingTasks : 0,
+      overdueInvoices: canViewInvoices ? overdueInvoices : null,
+      totalReceivables: canViewInvoices ? totalReceivables : null,
+      totalUnbilled: canViewInvoices ? totalUnbilled : null
     },
-    clientDistribution,
+    clientDistribution: canViewClients ? clientDistribution : [],
     staffLeaderboard,
     attendanceOverview,
+    myAttendanceToday,
     upcomingHolidays,
     recentActivity: {
       invoices: recentInvoices,
@@ -227,7 +332,8 @@ export const getClientSummaryMetrics = async (
     client: {
       _id: client?._id,
       name: client?.name,
-      fileNo: client?.fileNo
+      clientNumber: client?.clientNumber || client?.fileNo,
+      fileNo: client?.clientNumber || client?.fileNo
     },
     tasks: {
       pending: (statusMap['Pending'] || 0) + (statusMap['In Progress'] || 0) + (statusMap['Under Review'] || 0),

@@ -348,7 +348,8 @@ export const scanAndGenerateRecurringTasks = async (
           clientId: {
             _id: client._id,
             name: client.name,
-            fileNo: client.fileNo
+            clientNumber: client.clientNumber || client.fileNo,
+            fileNo: client.clientNumber || client.fileNo
           } as any,
           serviceId: {
             _id: target.serviceId,

@@ -216,7 +216,7 @@ export const createPhysicalDocumentService = async (
     await existingDoc.save();
 
     return (await PhysicalDocumentModel.findById(existingDoc._id)
-      .populate('clientId', 'name email mobile fileNo')
+      .populate('clientId', 'name email mobile clientNumber fileNo')
       .populate('custodianUserId', 'name email')) as IPhysicalDocument;
   }
 
@@ -286,7 +286,7 @@ export const createPhysicalDocumentService = async (
   });
 
   return (await PhysicalDocumentModel.findById(doc._id)
-    .populate('clientId', 'name email mobile fileNo')
+    .populate('clientId', 'name email mobile clientNumber fileNo')
     .populate('custodianUserId', 'name email')) as IPhysicalDocument;
 };
 
@@ -1177,7 +1177,7 @@ export const getDocumentMovementHistoryService = async (
   }
 
   const doc = await PhysicalDocumentModel.findOne({ _id: id, tenantId })
-    .populate('clientId', 'name email mobile fileNo')
+    .populate('clientId', 'name email mobile clientNumber fileNo')
     .populate('custodianUserId', 'name email')
     .populate('movements.custodianUserId', 'name email')
     .lean();

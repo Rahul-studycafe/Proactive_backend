@@ -4,6 +4,7 @@ import { tenantPlugin } from '../../../common/plugins/tenant.plugin';
 export interface IClient extends Document {
   tenantId: mongoose.Types.ObjectId;
   name: string;
+  clientNumber?: string;
   fileNo?: string;
   entityType?: string;
   email?: string;
@@ -51,6 +52,7 @@ const clientSchema = new Schema<IClient>({
   
   // Basic Identity
   name: { type: String, required: true, trim: true },
+  clientNumber: { type: String, trim: true },
   fileNo: { type: String, trim: true },
   entityType: {
     type: String,
@@ -135,12 +137,21 @@ clientSchema.virtual('portalUsers', {
 });
 
 clientSchema.index({ tenantId: 1, name: 1 });
+clientSchema.index({ tenantId: 1, clientNumber: 1 });
 clientSchema.index({ tenantId: 1, fileNo: 1 });
 clientSchema.index({ tenantId: 1, entityType: 1 });
 clientSchema.index({ tenantId: 1, 'tags': 1 });
 clientSchema.index({ tenantId: 1, 'assignedUsers': 1 });
 clientSchema.index({ tenantId: 1, gstin: 1 });
 clientSchema.index({ tenantId: 1, pan: 1 });
+
+clientSchema.pre('save', function () {
+  if (this.clientNumber && !this.fileNo) {
+    this.fileNo = this.clientNumber;
+  } else if (this.fileNo && !this.clientNumber) {
+    this.clientNumber = this.fileNo;
+  }
+});
 
 clientSchema.plugin(tenantPlugin);
 

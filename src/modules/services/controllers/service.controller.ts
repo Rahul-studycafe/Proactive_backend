@@ -174,7 +174,7 @@ export const getServiceClients = asyncHandler(async (req: Request, res: Response
       { 'subscribedPackages.packageId': { $in: packageIds } }
     ]
   })
-    .select('name fileNo entityType email mobile pan gstin isActive subscribedServices subscribedPackages assignedUsers createdAt')
+    .select('name clientNumber fileNo entityType email mobile pan gstin isActive subscribedServices subscribedPackages assignedUsers createdAt')
     .populate('assignedUsers', 'name photoUrl')
     .sort({ name: 1 })
     .lean();
@@ -200,7 +200,8 @@ export const getServiceClients = asyncHandler(async (req: Request, res: Response
     return {
       _id: c._id,
       name: c.name,
-      fileNo: c.fileNo,
+      clientNumber: c.clientNumber || c.fileNo,
+      fileNo: c.clientNumber || c.fileNo,
       entityType: c.entityType,
       email: c.email,
       mobile: c.mobile,

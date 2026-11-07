@@ -432,6 +432,7 @@ export const getDocumentRequestListService = async (
         .populate('clientId', 'name email mobile')
         .populate('taskId', 'description status priority')
         .populate('createdBy', 'name email')
+        .populate('items.uploadedDocumentId', 'fileName fileUrl createdAt')
         .sort(sortOptions)
         .skip(skip)
         .limit(limit)

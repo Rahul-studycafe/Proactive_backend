@@ -9,6 +9,8 @@ import { asyncHandler } from '../../../utils/async-handler';
 import { sendStaffInvitationEmail } from '../../auth/services/email.service';
 import bcrypt from 'bcryptjs';
 
+import { PermissionResolverService } from '../../../services/permission-resolver.service';
+
 const createUserSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
   username: z.string().min(4, 'Username must be at least 4 characters'),
@@ -16,10 +18,19 @@ const createUserSchema = z.object({
   mobile: z.string().optional(),
   password: z.string().min(6, 'Password must be at least 6 characters').optional().or(z.literal('')),
   confirmPassword: z.string().optional().or(z.literal('')),
-  roleId: z.string().length(24, 'Invalid role ID'),
+  roleId: z.string().length(24, 'Invalid role ID').optional(),
+  roleIds: z.array(z.string().length(24)).optional(),
   photoUrl: z.string().optional(),
   joiningDate: z.string().or(z.date()).optional(),
   isActive: z.boolean().optional().default(true)
+}).refine((data) => {
+  if (!data.roleId && (!data.roleIds || data.roleIds.length === 0)) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'At least one role must be assigned',
+  path: ['roleId']
 }).refine((data) => {
   if (data.password || data.confirmPassword) {
     return data.password === data.confirmPassword;
@@ -37,9 +48,13 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
     throw new ApiError(400, 'Validation Error', 'VALIDATION_ERROR', errors);
   }
 
-  const { name, username, email, mobile, password, roleId, photoUrl, joiningDate, isActive } = result.data;
+  const { name, username, email, mobile, password, roleId, roleIds, photoUrl, joiningDate, isActive } = result.data;
   const normalizedEmail = email.toLowerCase();
   const normalizedUsername = username.toLowerCase();
+
+  // Multi-role normalization
+  const resolvedRoleIds = (roleIds && roleIds.length > 0) ? roleIds : [roleId!];
+  const primaryRoleId = resolvedRoleIds[0];
 
   // Rule: If a user has a PlatformUser account, they cannot be added into any other tenant
   const platformUserExists = await PlatformUser.findOne({ email: normalizedEmail });
@@ -51,17 +66,19 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
     );
   }
 
-  // Check role validity and guard Super Admin role
-  const role = await Role.findById(roleId);
-  if (!role) {
-    throw new ApiError(404, 'Role not found', 'ROLE_NOT_FOUND');
-  }
-  if (role.isSuperAdmin) {
-    throw new ApiError(
-      403,
-      'The Super Admin role is reserved for the practice owner and cannot be assigned to tenant users.',
-      'FORBIDDEN'
-    );
+  // Check roles validity and guard Super Admin role
+  for (const rId of resolvedRoleIds) {
+    const role = await Role.findById(rId);
+    if (!role) {
+      throw new ApiError(404, `Role not found: ${rId}`, 'ROLE_NOT_FOUND');
+    }
+    if (role.isSuperAdmin) {
+      throw new ApiError(
+        403,
+        'The Super Admin role is reserved for the practice owner and cannot be assigned to tenant users.',
+        'FORBIDDEN'
+      );
+    }
   }
 
   // Uniqueness within this tenant
@@ -93,7 +110,8 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
     email: normalizedEmail,
     mobile,
     password: password || undefined,
-    roleId,
+    roleId: primaryRoleId,
+    roleIds: resolvedRoleIds,
     isOwner: false,
     invitationStatus,
     invitationToken,
@@ -144,6 +162,7 @@ export const getUsers = asyncHandler(async (req: Request, res: Response) => {
 
   const users = await User.find(query)
     .populate('roleId', 'name')
+    .populate('roleIds', 'name')
     .select('-password -refreshToken')
     .skip(skip)
     .limit(limit)
@@ -167,6 +186,7 @@ export const getUserById = asyncHandler(async (req: Request, res: Response) => {
 
   const user = await User.findById(id)
     .populate('roleId', 'name')
+    .populate('roleIds', 'name')
     .select('-password -refreshToken');
 
   if (!user) {
@@ -184,6 +204,7 @@ const updateUserSchema = z.object({
   password: z.string().min(6).optional(),
   confirmPassword: z.string().optional(),
   roleId: z.string().length(24).optional(),
+  roleIds: z.array(z.string().length(24)).optional(),
   photoUrl: z.string().optional(),
   joiningDate: z.string().or(z.date()).optional().nullable(),
   isActive: z.boolean().optional()
@@ -215,7 +236,7 @@ export const updateUser = asyncHandler(async (req: Request, res: Response) => {
 
   // Guard the Practice Owner
   if (user.isOwner) {
-    if (updates.roleId && updates.roleId !== user.roleId.toString()) {
+    if ((updates.roleId && updates.roleId !== user.roleId.toString()) || updates.roleIds) {
       throw new ApiError(403, 'The practice owner Super Admin role cannot be modified or demoted.', 'FORBIDDEN');
     }
     if (updates.isActive === false) {
@@ -230,21 +251,30 @@ export const updateUser = asyncHandler(async (req: Request, res: Response) => {
     }
   }
 
-  if (updates.roleId && updates.roleId !== user.roleId.toString()) {
-    const role = await Role.findById(updates.roleId);
-    if (!role) {
-      throw new ApiError(404, 'Role not found', 'ROLE_NOT_FOUND');
+  // Handle role updates (single or multi-role)
+  const incomingRoleIds = updates.roleIds || (updates.roleId ? [updates.roleId] : undefined);
+  if (incomingRoleIds && incomingRoleIds.length > 0) {
+    for (const rId of incomingRoleIds) {
+      const role = await Role.findById(rId);
+      if (!role) {
+        throw new ApiError(404, `Role not found: ${rId}`, 'ROLE_NOT_FOUND');
+      }
+      if (role.isSuperAdmin && !user.isOwner) {
+        throw new ApiError(
+          403,
+          'The Super Admin role is reserved for the practice owner and cannot be assigned to tenant users.',
+          'FORBIDDEN'
+        );
+      }
     }
-    if (role.isSuperAdmin && !user.isOwner) {
-      throw new ApiError(403, 'The Super Admin role is reserved for the practice owner and cannot be assigned to tenant users.', 'FORBIDDEN');
-    }
+    user.roleIds = incomingRoleIds as any;
+    user.roleId = incomingRoleIds[0] as any;
   }
 
   if (updates.name !== undefined) user.name = updates.name;
   if (updates.username !== undefined) user.username = updates.username;
   if (updates.email !== undefined) user.email = updates.email;
   if (updates.mobile !== undefined) user.mobile = updates.mobile;
-  if (updates.roleId !== undefined) user.roleId = updates.roleId as any;
   if (updates.photoUrl !== undefined) user.photoUrl = updates.photoUrl;
   if (updates.password !== undefined) user.password = updates.password;
   if (updates.joiningDate !== undefined) {
@@ -259,6 +289,9 @@ export const updateUser = asyncHandler(async (req: Request, res: Response) => {
   }
 
   await user.save();
+
+  // Invalidate cached permissions for this user
+  PermissionResolverService.invalidateUser(user._id.toString());
 
   const userResponse = user.toObject();
   delete userResponse.password;

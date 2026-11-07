@@ -14,6 +14,7 @@ import { Otp } from '../../../models/Otp';
 import { sendOtpEmail, sendPasswordResetEmail } from '../services/email.service';
 import crypto from 'crypto';
 import { PricingTier } from '../../../models/PricingTier';
+import { PermissionResolverService } from '../../../services/permission-resolver.service';
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID || 'dummy_key',
   key_secret: process.env.RAZORPAY_KEY_SECRET || 'dummy_secret',
@@ -409,6 +410,7 @@ export const getMe = asyncHandler(async (req: Request, res: Response) => {
 
   const user = await User.findById(userId)
     .populate('roleId')
+    .populate('roleIds')
     .populate('tenantId')
     .setOptions({ skipTenantPlugin: true });
 
@@ -416,7 +418,25 @@ export const getMe = asyncHandler(async (req: Request, res: Response) => {
     throw new ApiError(404, 'User not found', 'USER_NOT_FOUND');
   }
 
-  return sendSuccess(res, 200, 'User profile retrieved successfully', { user });
+  const tenantIdStr =
+    (user.tenantId as any)?._id?.toString() ||
+    (user.tenantId as any)?.toString() ||
+    req.tenantId?.toString() ||
+    '';
+
+  const effectiveState = await PermissionResolverService.resolveUserPermissions(
+    user._id.toString(),
+    tenantIdStr
+  );
+
+  return sendSuccess(res, 200, 'User profile retrieved successfully', {
+    user: {
+      ...user.toObject(),
+      isSuperAdmin: effectiveState.isSuperAdmin,
+      effectivePermissions: effectiveState.permissions,
+      roles: effectiveState.roles
+    }
+  });
 });
 
 export const uploadAvatar = asyncHandler(async (req: Request, res: Response) => {

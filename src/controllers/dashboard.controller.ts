@@ -13,7 +13,8 @@ import mongoose from 'mongoose';
 export const getDashboardOverview = asyncHandler(
   async (req: Request, res: Response) => {
     const data = await getDashboardMetrics(
-      req.tenantId as mongoose.Types.ObjectId
+      req.tenantId as mongoose.Types.ObjectId,
+      req.user
     );
     sendSuccess(res, 200, 'Success', data);
   }

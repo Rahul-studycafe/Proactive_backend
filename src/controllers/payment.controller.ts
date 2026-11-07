@@ -140,6 +140,7 @@ export const verifyPayment = asyncHandler(async (req: Request, res: Response) =>
       maxUsers: usersCount
     },
     subscriptionStatus: 'active',
+    subscriptionDuration: 'yearly',
     renewalDate: nextYear
   });
   await organization.save();
@@ -284,11 +285,16 @@ export const handleRazorpayWebhook = asyncHandler(async (req: Request | any, res
     await platformUser.save();
 
     // 2. Create Organization
+    const nextYear = new Date();
+    nextYear.setFullYear(nextYear.getFullYear() + 1);
+
     const organization = new Organization({
       name: pending.orgName,
       slug: pending.orgName.toLowerCase().replace(/[^a-z0-9]/g, '-'),
       ownerId: platformUser._id,
       subscriptionStatus: 'active',
+      subscriptionDuration: 'yearly',
+      renewalDate: nextYear,
       plan: {
         maxUsers: pending.usersCount
       }

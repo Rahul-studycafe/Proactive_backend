@@ -12,6 +12,7 @@ export interface IUser extends Document {
   password?: string;
   photoUrl?: string;
   roleId: mongoose.Types.ObjectId;
+  roleIds?: mongoose.Types.ObjectId[]; // Multi-role support
   isOwner: boolean;
   departmentId?: mongoose.Types.ObjectId;
   managerId?: mongoose.Types.ObjectId;
@@ -44,6 +45,7 @@ const userSchema = new Schema<IUser>({
   
   // Access Control & Organization
   roleId: { type: Schema.Types.ObjectId, ref: 'Role', required: true },
+  roleIds: [{ type: Schema.Types.ObjectId, ref: 'Role' }], // Multi-role support
   isOwner: { type: Boolean, default: false },
   departmentId: { type: Schema.Types.ObjectId, ref: 'Department' },
   managerId: { type: Schema.Types.ObjectId, ref: 'User' },
@@ -66,6 +68,15 @@ userSchema.index({ tenantId: 1, username: 1 }, { unique: true });
 userSchema.index({ tenantId: 1, email: 1 }, { unique: true, sparse: true });
 userSchema.index({ tenantId: 1, isActive: 1 });
 userSchema.index({ tenantId: 1, isOwner: 1 });
+
+// Role sync hook (keeps primary roleId and multi-role roleIds synchronized)
+userSchema.pre('save', function () {
+  if (this.roleId && (!this.roleIds || this.roleIds.length === 0)) {
+    this.roleIds = [this.roleId];
+  } else if ((!this.roleId || this.roleId === null) && this.roleIds && this.roleIds.length > 0) {
+    this.roleId = this.roleIds[0];
+  }
+});
 
 // Password hashing hook
 userSchema.pre('save', async function () {

@@ -48,9 +48,9 @@ router.get('/task/:taskId', authorize('task', 'view'), getTaskDocuments);
 router.post('/task/:taskId', authorize('task', 'edit'), upload.single('file'), uploadDocument);
 
 // Client Documents routes
-router.get('/client/:clientId', authorize('client', 'view'), getClientDocuments);
-router.post('/client/:clientId', authorize('client', 'edit'), upload.single('file'), uploadClientDocument);
+router.get('/client/:clientId', authorize('document:view'), getClientDocuments);
+router.post('/client/:clientId', authorize('document:create'), upload.single('file'), uploadClientDocument);
 
-router.delete('/:id', authorize('task', 'delete'), deleteDocument); // Need to eventually split or update permissions if client-only
+router.delete('/:id', authorize('document:delete'), deleteDocument);
 
 export default router;

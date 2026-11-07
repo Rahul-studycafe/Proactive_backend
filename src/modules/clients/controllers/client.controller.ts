@@ -8,6 +8,7 @@ import { triggerAutoDocumentRequestForService } from '../../../services/document
 
 const clientSchema = z.object({
   name: z.string().min(1, 'Name is required'),
+  clientNumber: z.string().optional(),
   fileNo: z.string().optional(),
   entityType: z.enum([
     'Sole Proprietorship', 'Private Limited', 'Individual',
@@ -59,6 +60,7 @@ export const getClients = asyncHandler(async (req: Request, res: Response) => {
   if (search) {
     query.$or = [
       { name: { $regex: search, $options: 'i' } },
+      { clientNumber: { $regex: search, $options: 'i' } },
       { fileNo: { $regex: search, $options: 'i' } },
       { pan: { $regex: search, $options: 'i' } },
       { gstin: { $regex: search, $options: 'i' } }
@@ -120,7 +122,13 @@ export const getClientById = asyncHandler(async (req: Request, res: Response) =>
 
 export const createClient = asyncHandler(async (req: Request, res: Response) => {
   const data = clientSchema.parse(req.body);
-  const client = await Client.create({ tenantId: req.tenantId, ...(data as any) });
+  const clientNumber = data.clientNumber || data.fileNo;
+  const fileNo = data.fileNo || data.clientNumber;
+  const client = await Client.create({
+    tenantId: req.tenantId,
+    ...(data as any),
+    ...(clientNumber ? { clientNumber, fileNo } : {})
+  });
 
   if (client.subscribedServices && client.subscribedServices.length > 0) {
     for (const sub of client.subscribedServices) {
@@ -139,6 +147,11 @@ export const createClient = asyncHandler(async (req: Request, res: Response) => 
 export const updateClient = asyncHandler(async (req: Request, res: Response) => {
   const updateSchema = clientSchema.partial();
   const data = updateSchema.parse(req.body);
+  if (data.clientNumber && !data.fileNo) {
+    data.fileNo = data.clientNumber;
+  } else if (data.fileNo && !data.clientNumber) {
+    data.clientNumber = data.fileNo;
+  }
   const client = await Client.findOneAndUpdate(
     { _id: req.params.id, tenantId: req.tenantId },
     data,

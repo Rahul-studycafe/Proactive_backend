@@ -84,7 +84,7 @@ export const getAutomationLogs = asyncHandler(async (req: Request, res: Response
       .skip(skip)
       .limit(limit)
       .populate('triggeredBy', 'name username email')
-      .populate('details.clientId', 'name fileNo')
+      .populate('details.clientId', 'name clientNumber fileNo')
       .populate('details.serviceId', 'name'),
     AutomationLog.countDocuments({ tenantId: req.tenantId })
   ]);

@@ -16,21 +16,21 @@ const router = Router();
 router.use(authenticate);
 
 // List services
-router.get('/', authorize('settings', 'manageMasters'), getServices);
+router.get('/', authorize('service:view'), getServices);
 
 // Get single service
-router.get('/:id', authorize('settings', 'manageMasters'), getServiceById);
+router.get('/:id', authorize('service:view'), getServiceById);
 
 // Get clients subscribed to service
-router.get('/:id/clients', authorize('settings', 'manageMasters'), getServiceClients);
+router.get('/:id/clients', authorize('service:view'), getServiceClients);
 
 // Create service
-router.post('/', authorize('settings', 'manageMasters'), createService);
+router.post('/', authorize('service:create'), createService);
 
 // Update service
-router.put('/:id', authorize('settings', 'manageMasters'), updateService);
+router.put('/:id', authorize('service:edit'), updateService);
 
 // Delete/Disable service
-router.delete('/:id', authorize('settings', 'manageMasters'), deleteService);
+router.delete('/:id', authorize('service:delete'), deleteService);
 
 export default router;

@@ -183,7 +183,7 @@ export class QuotationService {
     await quotation.save();
 
     return (await Quotation.findById(quotation._id)
-      .populate('clientId', 'name fileNo pan gstin email mobile address city state pincode')
+      .populate('clientId', 'name clientNumber fileNo pan gstin email mobile address city state pincode')
       .populate('billingEntityId')
       .populate('createdBy', 'name email')) as IQuotation;
   }
@@ -223,7 +223,7 @@ export class QuotationService {
 
     const [quotations, total, summaryAgg] = await Promise.all([
       Quotation.find(filter)
-        .populate('clientId', 'name fileNo pan email mobile')
+        .populate('clientId', 'name clientNumber fileNo pan email mobile')
         .populate('convertedInvoiceId', 'invoiceNo date status totals')
         .sort({ date: -1, createdAt: -1 })
         .skip(skip)
@@ -291,7 +291,7 @@ export class QuotationService {
    */
   static async getQuotationById(tenantId: mongoose.Types.ObjectId, id: string): Promise<IQuotation> {
     const quotation = await Quotation.findOne({ _id: id, tenantId })
-      .populate('clientId', 'name fileNo pan gstin email mobile address city state pincode entityType contactPersonName')
+      .populate('clientId', 'name clientNumber fileNo pan gstin email mobile address city state pincode entityType contactPersonName')
       .populate('billingEntityId')
       .populate('convertedInvoiceId', 'invoiceNo date status totals')
       .populate('createdBy', 'name email');

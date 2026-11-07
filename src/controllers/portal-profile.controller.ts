@@ -43,7 +43,8 @@ export const getPortalProfile = asyncHandler(async (req: Request, res: Response)
     client: {
       _id: client._id,
       name: client.name,
-      fileNo: client.fileNo,
+      clientNumber: client.clientNumber || client.fileNo,
+      fileNo: client.clientNumber || client.fileNo,
       entityType: client.entityType,
       pan: client.pan,
       gstin: client.gstin,

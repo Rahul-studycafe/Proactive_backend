@@ -34,7 +34,7 @@ const updateTaskSchema = z.object({
   description: z.string().optional(),
   status: z.enum(['Pending', 'In Progress', 'Under Review', 'On Hold', 'Completed', 'Cancelled'] as any).optional(),
   priority: z.enum(['Low', 'Medium', 'High', 'Urgent']).optional(),
-  assigneeIds: z.array(z.string()).min(1).optional(),
+  assigneeIds: z.array(z.string()).optional(),
   dueDate: z.string().optional(),
   targetDate: z.string().optional(),
   isBillable: z.boolean().optional(),
@@ -286,7 +286,7 @@ export const getTasks = asyncHandler(async (req: Request, res: Response) => {
 
   const [tasks, total] = await Promise.all([
     Task.find(query)
-      .populate('clientId', 'name fileNo pan')
+      .populate('clientId', 'name clientNumber fileNo pan')
       .populate('serviceId', 'name')
       .populate('assigneeIds', 'name photoUrl')
       .sort(sortParams)
@@ -308,7 +308,7 @@ export const getTasks = asyncHandler(async (req: Request, res: Response) => {
 
 export const getTaskById = asyncHandler(async (req: Request, res: Response) => {
   const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId })
-    .populate('clientId', 'name fileNo pan')
+    .populate('clientId', 'name clientNumber fileNo pan')
     .populate('serviceId', 'name customFieldsDef')
     .populate('assigneeIds', 'name photoUrl')
     .populate('checklist.completedBy', 'name photoUrl')

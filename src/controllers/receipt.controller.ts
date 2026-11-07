@@ -84,7 +84,7 @@ export const getReceipts = asyncHandler(
 
     const [receipts, total] = await Promise.all([
       Receipt.find(query)
-        .populate('clientId', 'name fileNo')
+        .populate('clientId', 'name clientNumber fileNo')
         .sort({ date: -1, createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -113,7 +113,7 @@ export const getReceiptById = asyncHandler(
       _id: req.params.id,
       tenantId: req.tenantId
     })
-      .populate('clientId', 'name fileNo pan gstin email mobile address')
+      .populate('clientId', 'name clientNumber fileNo pan gstin email mobile address')
       .populate('settlements.invoiceId', 'invoiceNo date dueDate totals status');
 
     if (!receipt) {

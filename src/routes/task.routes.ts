@@ -38,7 +38,7 @@ router.get('/:id', authorize('task', 'view'), getTaskById);
 router.post('/', authorize('task', 'create'), createTask);
 
 // Update task (requires edit permission)
-router.put('/:id', authorize('task', 'edit'), updateTask);
+router.put('/:id', authorize(['task:edit', 'task:assign']), updateTask);
 
 // Update task status (quick toggle)
 router.patch('/:id/status', authorize('task', 'edit'), updateTaskStatus);

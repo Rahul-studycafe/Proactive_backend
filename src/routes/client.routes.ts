@@ -44,25 +44,25 @@ router.get('/:id', authorize('client', 'view'), getClientById);
 router.post('/', authorize('client', 'create'), checkClientLimit, createClient);
 
 // Update client (requires edit permission)
-router.put('/:id', authorize('client', 'edit'), updateClient);
+router.put('/:id', authorize('client:edit'), updateClient);
 
 // Subscribe to package (requires edit permission on client)
-router.post('/:id/packages', authorize('client', 'edit'), subscribeToPackage);
-router.delete('/:id/packages/:packageId', authorize('client', 'edit'), unsubscribeFromPackage);
+router.post('/:id/packages', authorize(['client:packages_manage', 'client:edit']), subscribeToPackage);
+router.delete('/:id/packages/:packageId', authorize(['client:packages_manage', 'client:edit']), unsubscribeFromPackage);
 
 // Subscribe to service (requires edit permission on client)
-router.post('/:id/services', authorize('client', 'edit'), subscribeToService);
-router.delete('/:id/services/:serviceId', authorize('client', 'edit'), unsubscribeFromService);
+router.post('/:id/services', authorize(['client:services_manage', 'client:edit']), subscribeToService);
+router.delete('/:id/services/:serviceId', authorize(['client:services_manage', 'client:edit']), unsubscribeFromService);
 
 // Client Portal Access & Users Management
-router.get('/:id/portal-users', authorize('client', 'view'), getClientPortalUsers);
-router.post('/:id/portal-users', authorize('client', 'edit'), createClientPortalUser);
-router.put('/:id/portal-users/:userId', authorize('client', 'edit'), updateClientPortalUser);
-router.delete('/:id/portal-users/:userId', authorize('client', 'edit'), deleteClientPortalUser);
-router.post('/:id/portal-users/:userId/reset-password', authorize('client', 'edit'), resetClientPortalUserPassword);
-router.patch('/:id/portal-access', authorize('client', 'edit'), toggleClientPortalAccess);
+router.get('/:id/portal-users', authorize(['client:portal_manage', 'client:view', 'client:edit']), getClientPortalUsers);
+router.post('/:id/portal-users', authorize(['client:portal_manage', 'client:edit']), createClientPortalUser);
+router.put('/:id/portal-users/:userId', authorize(['client:portal_manage', 'client:edit']), updateClientPortalUser);
+router.delete('/:id/portal-users/:userId', authorize(['client:portal_manage', 'client:edit']), deleteClientPortalUser);
+router.post('/:id/portal-users/:userId/reset-password', authorize(['client:portal_manage', 'client:edit']), resetClientPortalUserPassword);
+router.patch('/:id/portal-access', authorize(['client:portal_manage', 'client:edit']), toggleClientPortalAccess);
 
 // Delete/Disable client (requires delete permission)
-router.delete('/:id', authorize('client', 'delete'), deleteClient);
+router.delete('/:id', authorize('client:delete'), deleteClient);
 
 export default router;

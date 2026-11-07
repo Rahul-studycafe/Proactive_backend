@@ -643,7 +643,8 @@ export const getMonthlyMatrixService = async (
   yearParam?: string,
   departmentId?: string,
   page?: number,
-  limit?: number
+  limit?: number,
+  targetUserId?: string | mongoose.Types.ObjectId
 ): Promise<MonthlyMatrixResult> => {
   const now = new Date();
   const month = monthParam
@@ -716,6 +717,9 @@ export const getMonthlyMatrixService = async (
   const staffMatch: any = { tenantId, isActive: true };
   if (departmentId && mongoose.Types.ObjectId.isValid(departmentId)) {
     staffMatch.departmentId = new mongoose.Types.ObjectId(departmentId);
+  }
+  if (targetUserId) {
+    staffMatch._id = new mongoose.Types.ObjectId(targetUserId);
   }
 
   const staffPipeline: any[] = [
@@ -872,6 +876,15 @@ export interface StaffAttendanceSummaryResult {
   attendancePercentage: number;
   totalWorkingMinutes: number;
   totalOvertimeMinutes: number;
+  records?: Array<{
+    date: string;
+    status: string;
+    checkIn?: Date;
+    checkOut?: Date;
+    totalMinutes?: number;
+    overtimeMinutes?: number;
+    notes?: string;
+  }>;
 }
 
 export const getStaffAttendanceSummaryService = async (
@@ -1043,7 +1056,16 @@ export const getStaffAttendanceSummaryService = async (
     payableDays,
     attendancePercentage,
     totalWorkingMinutes,
-    totalOvertimeMinutes
+    totalOvertimeMinutes,
+    records: records.map((r: any) => ({
+      date: r.date,
+      status: r.status,
+      checkIn: r.checkIn,
+      checkOut: r.checkOut,
+      totalMinutes: r.totalMinutes,
+      overtimeMinutes: r.overtimeMinutes,
+      notes: r.notes
+    }))
   };
 };
 

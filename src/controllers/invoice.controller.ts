@@ -173,7 +173,7 @@ export const getInvoices = asyncHandler(async (req: Request, res: Response) => {
 
   const [invoices, total] = await Promise.all([
     Invoice.find(query)
-      .populate('clientId', 'name fileNo')
+      .populate('clientId', 'name clientNumber fileNo')
       .sort({ date: -1 })
       .skip(skip)
       .limit(limit),
@@ -195,7 +195,7 @@ export const getInvoiceById = asyncHandler(async (req: Request, res: Response) =
   const invoice = await Invoice.findOne({ _id: req.params.id, tenantId: req.tenantId })
     .populate(
       'clientId',
-      'name fileNo pan gstin email mobile secondaryMobile address city state pincode entityType contactPersonName'
+      'name clientNumber fileNo pan gstin email mobile secondaryMobile address city state pincode entityType contactPersonName'
     )
     .populate('billingEntityId');
   if (!invoice) throw new ApiError(404, 'Invoice not found');

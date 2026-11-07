@@ -13,189 +13,31 @@ export interface IRole extends Document {
   name: string;
   description?: string;
   isSuperAdmin: boolean;
-  permissions: {
-    client: {
-      create: IPermissionAction;
-      edit: IPermissionAction;
-      view: IPermissionAction;
-      delete: IPermissionAction;
-      viewLedger: IPermissionAction;
-      manageClientPackages: IPermissionAction;
-      viewClientPackages: IPermissionAction;
-    };
-    package: {
-      create: IPermissionAction;
-      edit: IPermissionAction;
-      view: IPermissionAction;
-      delete: IPermissionAction;
-    };
-    user: {
-      create: IPermissionAction;
-      edit: IPermissionAction;
-      view: IPermissionAction;
-      delete: IPermissionAction;
-    };
-    task: {
-      create: IPermissionAction;
-      edit: IPermissionAction;
-      view: IPermissionAction;
-      delete: IPermissionAction;
-      verify: IPermissionAction;
-      assignToOthers: IPermissionAction;
-      manageTimeLog: IPermissionAction;
-      deleteNote: IPermissionAction;
-    };
-    invoice: {
-      create: IPermissionAction;
-      edit: IPermissionAction;
-      view: IPermissionAction;
-      delete: IPermissionAction;
-    };
-    receipt: {
-      create: IPermissionAction;
-      edit: IPermissionAction;
-      view: IPermissionAction;
-      delete: IPermissionAction;
-    };
-    quotation: {
-      create: IPermissionAction;
-      edit: IPermissionAction;
-      view: IPermissionAction;
-      delete: IPermissionAction;
-    };
-    expense: {
-      create: IPermissionAction;
-      edit: IPermissionAction;
-      view: IPermissionAction;
-      delete: IPermissionAction;
-    };
-    docsInOut: {
-      create: IPermissionAction;
-      edit: IPermissionAction;
-      view: IPermissionAction;
-      delete: IPermissionAction;
-    };
-    dsc: {
-      create: IPermissionAction;
-      edit: IPermissionAction;
-      view: IPermissionAction;
-      delete: IPermissionAction;
-    };
-    attendance: {
-      markAttendance?: IPermissionAction;
-      markPastFuture?: IPermissionAction;
-      manage?: IPermissionAction;
-      view_self?: IPermissionAction;
-      view?: IPermissionAction;
-    };
-    todo: {
-      assignToOthers: IPermissionAction;
-    };
-    settings: {
-      manageMasters: IPermissionAction;
-    };
-  };
+  isSystemDefault: boolean; // Protects built-in blueprint roles (Admin, Accountant, Staff) from deletion
+  permissions: Record<string, any>; // Dynamic map: supports "resource:action" and legacy nested schemas
+  createdBy?: mongoose.Types.ObjectId;
+  updatedBy?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
 
-const SCOPES = ['everything', 'assigned_only', 'team_only'];
-
-const permissionActionSchema = {
-  allowed: { type: Boolean, default: false },
-  scope: { type: String, enum: SCOPES, default: 'everything' }
-};
-
 const roleSchema = new Schema<IRole>({
   tenantId: { type: Schema.Types.ObjectId, ref: 'Organization', required: true, index: true },
   name: { type: String, required: true, trim: true },
-  description: { type: String },
+  description: { type: String, trim: true },
   isSuperAdmin: { type: Boolean, default: false },
+  isSystemDefault: { type: Boolean, default: false },
   permissions: {
-    client: {
-      create: permissionActionSchema,
-      edit: permissionActionSchema,
-      view: permissionActionSchema,
-      delete: permissionActionSchema,
-      viewLedger: permissionActionSchema,
-      manageClientPackages: permissionActionSchema,
-      viewClientPackages: permissionActionSchema
-    },
-    package: {
-      create: permissionActionSchema,
-      edit: permissionActionSchema,
-      view: permissionActionSchema,
-      delete: permissionActionSchema
-    },
-    user: {
-      create: permissionActionSchema,
-      edit: permissionActionSchema,
-      view: permissionActionSchema,
-      delete: permissionActionSchema
-    },
-    task: {
-      create: permissionActionSchema,
-      edit: permissionActionSchema,
-      view: permissionActionSchema,
-      delete: permissionActionSchema,
-      verify: permissionActionSchema,
-      assignToOthers: permissionActionSchema,
-      manageTimeLog: permissionActionSchema,
-      deleteNote: permissionActionSchema
-    },
-    invoice: {
-      create: permissionActionSchema,
-      edit: permissionActionSchema,
-      view: permissionActionSchema,
-      delete: permissionActionSchema
-    },
-    receipt: {
-      create: permissionActionSchema,
-      edit: permissionActionSchema,
-      view: permissionActionSchema,
-      delete: permissionActionSchema
-    },
-    quotation: {
-      create: permissionActionSchema,
-      edit: permissionActionSchema,
-      view: permissionActionSchema,
-      delete: permissionActionSchema
-    },
-    expense: {
-      create: permissionActionSchema,
-      edit: permissionActionSchema,
-      view: permissionActionSchema,
-      delete: permissionActionSchema
-    },
-    docsInOut: {
-      create: permissionActionSchema,
-      edit: permissionActionSchema,
-      view: permissionActionSchema,
-      delete: permissionActionSchema
-    },
-    dsc: {
-      create: permissionActionSchema,
-      edit: permissionActionSchema,
-      view: permissionActionSchema,
-      delete: permissionActionSchema
-    },
-    attendance: {
-      markAttendance: permissionActionSchema,
-      markPastFuture: permissionActionSchema,
-      manage: permissionActionSchema,
-      view_self: permissionActionSchema,
-      view: permissionActionSchema
-    },
-    todo: {
-      assignToOthers: permissionActionSchema
-    },
-    settings: {
-      manageMasters: permissionActionSchema
-    }
-  }
-}, { timestamps: true });
+    type: Schema.Types.Mixed,
+    default: {}
+  },
+  createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  updatedBy: { type: Schema.Types.ObjectId, ref: 'User' }
+}, { timestamps: true, minimize: false });
 
 roleSchema.index({ tenantId: 1, name: 1 }, { unique: true });
+roleSchema.index({ tenantId: 1, isSuperAdmin: 1 });
+roleSchema.index({ tenantId: 1, isSystemDefault: 1 });
 
 roleSchema.plugin(tenantPlugin);
 
