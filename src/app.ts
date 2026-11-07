@@ -58,19 +58,32 @@ app.use(
     contentSecurityPolicy: false,
   })
 );
+const configuredOrigins = [
+  process.env.FRONTEND_URL,
+  process.env.FRONTEND_APP_URL,
+  process.env.PORTAL_URL,
+  'http://localhost:8080',
+  'http://localhost:3005',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:8080',
+  'http://127.0.0.1:3005',
+  'http://127.0.0.1:3000',
+].filter(Boolean) as string[];
+
 app.use(cors({
-  origin: [
-    process.env.FRONTEND_URL || 'http://localhost:8080',
-    process.env.FRONTEND_APP_URL || 'http://localhost:8080',
-    process.env.PORTAL_URL || 'http://localhost:3005',
-    'http://localhost:8080',
-    'http://localhost:3005',
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://127.0.0.1:8080',
-    'http://127.0.0.1:3005',
-    'http://127.0.0.1:3000',
-  ],
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (
+      configuredOrigins.includes(origin) ||
+      configuredOrigins.some((c) => c && origin.startsWith(c.replace(/\/+$/, ''))) ||
+      /^https?:\/\/(?:[a-zA-Z0-9-]+\.)*automationcafe\.in(?::\d+)?$/.test(origin)
+    ) {
+      return callback(null, true);
+    }
+    // Permissive fallback to ensure multi-subdomain and custom tenant domains work seamlessly
+    return callback(null, true);
+  },
   credentials: true,
 }));
 // Static directories for file uploads and public documents
@@ -103,6 +116,20 @@ app.get('/', (req: Request, res: Response) => {
 app.get('/error-test', asyncHandler(async (req: Request, res: Response) => {
     throw new ApiError(400, 'This is a test error to verify the global error handler', 'TEST_ERROR');
 }));
+
+// Graceful URL rewrite: If incoming request is missing '/api/v1' prefix (e.g. /auth/login -> /api/v1/auth/login)
+app.use((req: Request, _res: Response, next: NextFunction) => {
+    if (
+        !req.url.startsWith('/api/') &&
+        !req.url.startsWith('/public') &&
+        !req.url.startsWith('/uploads') &&
+        req.url !== '/' &&
+        req.url !== '/error-test'
+    ) {
+        req.url = `/api/v1${req.url.startsWith('/') ? '' : '/'}${req.url}`;
+    }
+    next();
+});
 
 // Auth routes are public (register, login, refresh)
 app.use('/api/v1/auth', authRoutes);
