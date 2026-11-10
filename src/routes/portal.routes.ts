@@ -20,6 +20,7 @@ import {
   getComplianceCalendar,
   getPortalDocuments,
   downloadPortalDocument,
+  uploadPortalDocument,
   getPortalInvoices,
   getPortalReceipts,
   getPortalLedger,
@@ -86,6 +87,7 @@ router.get('/compliance', clientAuthenticate, getComplianceCalendar);
 // Phase 127: Client Documents Repository & Return Vault
 router.get('/documents', clientAuthenticate, getPortalDocuments);
 router.get('/documents/:id/download', clientAuthenticate, downloadPortalDocument);
+router.post('/documents/upload', clientAuthenticate, uploadPortalDoc.single('file'), uploadPortalDocument);
 
 // Phase 128 & Part 27: Client Invoices, Receipts, Ledger & UPI QR
 router.get('/invoices', clientAuthenticate, getPortalInvoices);

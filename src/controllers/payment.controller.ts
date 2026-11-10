@@ -8,6 +8,7 @@ import { Organization, User, PlatformUser } from '../modules/auth/schemas';
 import { Role } from '../modules/roles/schemas';
 import { BillingEntity } from '../modules/masters/schemas';
 import { TenantSettings } from '../modules/masters/schemas';
+import { TenantConfigurationService } from '../services/tenant-configuration.service';
 import { sendWelcomeEmail } from '../services/email.service';
 import { generateAccessToken, generateRefreshToken } from '../modules/auth/services/auth.service';
 import Razorpay from 'razorpay';
@@ -189,6 +190,9 @@ export const verifyPayment = asyncHandler(async (req: Request, res: Response) =>
   });
   await settings.save();
 
+  // 6. Seed Default Tenant Configurations
+  await TenantConfigurationService.seedDefaultsForTenant(organization._id);
+
   // Generate tokens
   const tokenPayload = {
     userId: userRecord._id.toString(),
@@ -341,6 +345,9 @@ export const handleRazorpayWebhook = asyncHandler(async (req: Request | any, res
       allowDuplicateClientNames: false,
       defaultGstPercentage: 18
     });
+
+    // Seed Default Tenant Configurations
+    await TenantConfigurationService.seedDefaultsForTenant(organization._id);
 
     // Send email
     if (userRecord.email) {

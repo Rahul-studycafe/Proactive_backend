@@ -13,7 +13,7 @@ const createExpenseSchema = z.object({
   categoryId: z.string().min(1, 'Category ID is required'),
   categoryName: z.string().optional(),
   amount: z.coerce.number().min(0.01, 'Amount must be greater than zero'),
-  paymentMode: z.enum(['Bank Transfer', 'Cash', 'UPI', 'Credit Card', 'Cheque']).default('Bank Transfer'),
+  paymentMode: z.string().default('Bank Transfer'),
   paidFromAccount: z.string().optional(),
   notes: z.string().optional()
 });
@@ -24,7 +24,7 @@ const updateExpenseSchema = z.object({
   categoryId: z.string().optional(),
   categoryName: z.string().optional(),
   amount: z.coerce.number().min(0.01, 'Amount must be greater than zero').optional(),
-  paymentMode: z.enum(['Bank Transfer', 'Cash', 'UPI', 'Credit Card', 'Cheque']).optional(),
+  paymentMode: z.string().optional(),
   paidFromAccount: z.string().optional(),
   notes: z.string().optional()
 });

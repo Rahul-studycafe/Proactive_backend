@@ -21,7 +21,7 @@ export interface CreatePhysicalDocumentInput {
   clientId: string;
   date?: string | Date;
   category: DocumentCategory;
-  documentType: PhysicalDocumentType;
+  documentType: string;
   documentName: string;
   isReturnable?: boolean;
   returnDate?: string | Date;
@@ -37,7 +37,7 @@ export interface UpdatePhysicalDocumentInput {
   clientId?: string;
   date?: string | Date;
   category?: DocumentCategory;
-  documentType?: PhysicalDocumentType;
+  documentType?: string;
   documentName?: string;
   isReturnable?: boolean;
   returnDate?: string | Date | null;
@@ -78,7 +78,7 @@ export interface GetPhysicalDocumentsQuery {
   category?: DocumentCategory;
   status?: PhysicalDocumentStatus;
   isReturnable?: string | boolean;
-  documentType?: PhysicalDocumentType;
+  documentType?: string;
   location?: string;
   fromDate?: string;
   toDate?: string;

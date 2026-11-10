@@ -25,6 +25,7 @@ const clientSchema = z.object({
   pan: z.string().optional(),
   gstin: z.string().optional(),
   photoUrl: z.string().optional(),
+  group: z.string().optional(),
   groupId: z.string().optional(),
   tags: z.array(z.string()).optional(),
   billingProfileId: z.string().optional(),

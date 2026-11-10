@@ -20,21 +20,15 @@ import {
   getAvailablePhysicalDocsForMovementService,
   getDocumentMovementHistoryService
 } from '../services/physical-document.service';
+import { notificationDispatcher } from '../services/notifications/notification-dispatcher.service';
+import mongoose from 'mongoose';
 
 const createPhysicalDocumentSchema = z.object({
   documentId: z.string().optional(),
   clientId: z.string().min(1, 'Client ID is required'),
   date: z.string().optional(),
   category: z.enum(['Received', 'Given']),
-  documentType: z.enum([
-    'Passbook',
-    'Cheque Book',
-    'Original Deeds',
-    'PAN Card',
-    'Registration Certificate',
-    'Company Seal',
-    'Other'
-  ]),
+  documentType: z.string().min(1, 'Document type is required'),
   documentName: z.string().min(2, 'Document name must be at least 2 characters'),
   isReturnable: z.boolean().optional(),
   returnDate: z.string().optional(),
@@ -49,17 +43,7 @@ const updatePhysicalDocumentSchema = z.object({
   clientId: z.string().optional(),
   date: z.string().optional(),
   category: z.enum(['Received', 'Given']).optional(),
-  documentType: z
-    .enum([
-      'Passbook',
-      'Cheque Book',
-      'Original Deeds',
-      'PAN Card',
-      'Registration Certificate',
-      'Company Seal',
-      'Other'
-    ])
-    .optional(),
+  documentType: z.string().optional(),
   documentName: z.string().min(2).optional(),
   isReturnable: z.boolean().optional(),
   returnDate: z.string().nullable().optional(),
@@ -112,6 +96,20 @@ export const createPhysicalDocument = asyncHandler(
       parsed.data,
       req.user!._id
     );
+
+    const isOutward = (doc as any).direction === 'Given to Client / Third Party' || (doc as any).direction === 'Outward';
+    notificationDispatcher.dispatch({
+      tenantId: req.tenantId as mongoose.Types.ObjectId,
+      recipients: [{ userId: req.user!._id }],
+      eventKey: isOutward ? 'physical_doc:handed_out' : 'physical_doc:received',
+      category: 'documents',
+      title: isOutward ? 'Physical Document Handed Out' : 'Physical Document Received In Office',
+      message: `${(doc as any).docType || 'Document'} "${(doc as any).documentName || 'File'}" was logged as ${isOutward ? 'outward to' : 'inward from'} ${(doc as any).personName || 'Party'}.`,
+      link: `/documents/docs-in-out`,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      metadata: { physicalDocId: (doc as any)._id }
+    }).catch(err => console.error('[createPhysicalDocument] Notification error:', err));
 
     return sendSuccess(
       res,

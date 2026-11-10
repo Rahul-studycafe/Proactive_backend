@@ -10,10 +10,10 @@ import { sendDscExpiryEmail } from './email.service';
 export interface CreateDscInput {
   clientId: string;
   certificateName: string;
-  certificateClass?: 'Class 2' | 'Class 3';
-  tokenType?: 'ePass2003' | 'ProxKey' | 'mToken' | 'Watchdata' | 'Other';
+  certificateClass?: string;
+  tokenType?: string;
   tokenSerialNumber?: string;
-  issuingAuthority?: 'eMudhra' | 'Capricorn' | 'Vsign' | 'Sify' | 'IDSign' | 'Other';
+  issuingAuthority?: string;
   issueDate: string | Date;
   expiryDate: string | Date;
   physicalLocation: string;
@@ -24,10 +24,10 @@ export interface CreateDscInput {
 
 export interface UpdateDscInput {
   certificateName?: string;
-  certificateClass?: 'Class 2' | 'Class 3';
-  tokenType?: 'ePass2003' | 'ProxKey' | 'mToken' | 'Watchdata' | 'Other';
+  certificateClass?: string;
+  tokenType?: string;
   tokenSerialNumber?: string;
-  issuingAuthority?: 'eMudhra' | 'Capricorn' | 'Vsign' | 'Sify' | 'IDSign' | 'Other';
+  issuingAuthority?: string;
   issueDate?: string | Date;
   expiryDate?: string | Date;
   physicalLocation?: string;

@@ -14,6 +14,9 @@ import {
   bulkImportPasswordsService,
   getPortalMastersService,
 } from '../services/password-vault.service';
+import { notificationDispatcher } from '../services/notifications/notification-dispatcher.service';
+import { User } from '../modules/auth/schemas';
+import mongoose from 'mongoose';
 
 const createPasswordSchema = z.object({
   clientId: z.string().min(1, 'Client ID is required'),
@@ -146,6 +149,30 @@ export const revealPassword = asyncHandler(async (req: Request, res: Response) =
     userAgent,
     purpose
   );
+
+  // Security Audit Notification: alert the tenant Super Admin/Owners that credentials were unmasked
+  User.find({ tenantId: req.tenantId, isOwner: true })
+    .select('_id name email')
+    .lean()
+    .then((owners: any[]) => {
+      if (owners && owners.length > 0) {
+        notificationDispatcher.dispatch({
+          tenantId: req.tenantId as mongoose.Types.ObjectId,
+          recipients: owners.map((o) => ({ userId: o._id, email: o.email, name: o.name })),
+          eventKey: 'vault:credential_revealed',
+          category: 'dsc_vault',
+          priority: 'high',
+          isMandatory: true,
+          title: `Security Alert: Vault Password Unmasked`,
+          message: `Portal credentials for "${revealed.portalName || 'Portal'}" (${revealed.username || 'user'}) were accessed by ${req.user?.name || 'Staff'}${purpose ? ` (Purpose: ${purpose})` : ''}.`,
+          link: `/vaults/passwords`,
+          actorId: req.user?._id,
+          actorName: req.user?.name,
+          metadata: { credentialId: id, portalName: revealed.portalName, unmaskedBy: req.user?._id }
+        }).catch(err => console.error('[revealPassword] Notification error:', err));
+      }
+    })
+    .catch(err => console.error('[revealPassword] Owner lookup error:', err));
 
   return sendSuccess(res, 200, 'Password revealed and logged successfully', revealed);
 });

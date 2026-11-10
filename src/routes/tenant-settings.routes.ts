@@ -16,10 +16,6 @@ import {
   getGatewayConfigs,
   upsertGatewayConfig
 } from '../controllers/payment-gateway.controller';
-import {
-  getTenantWebsiteSettings,
-  updateTenantWebsiteSettings
-} from '../controllers/website-cms.controller';
 
 const router = Router();
 
@@ -43,9 +39,5 @@ router.post('/payment-gateways', upsertGatewayConfig);
 router.get('/usage', getTenantUsage);
 router.get('/subscription', getTenantSubscription);
 router.post('/subscription', upsertTenantSubscription);
-
-// Phase 124: White-Label Agency Website CMS
-router.get('/website', getTenantWebsiteSettings);
-router.put('/website', updateTenantWebsiteSettings);
 
 export default router;

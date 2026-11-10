@@ -17,6 +17,7 @@ export interface IClient extends Document {
   pan?: string;
   gstin?: string;
   photoUrl?: string;
+  group?: string;
   groupId?: mongoose.Types.ObjectId;
   tags: string[];
   billingProfileId?: mongoose.Types.ObjectId;
@@ -81,6 +82,7 @@ const clientSchema = new Schema<IClient>({
   
   // Metadata / Classification
   photoUrl: { type: String, default: '' },
+  group: { type: String, trim: true },
   groupId: { type: Schema.Types.ObjectId, ref: 'ClientGroup' },
   tags: [{ type: String }],
   assignedUsers: [{ type: Schema.Types.ObjectId, ref: 'User' }],

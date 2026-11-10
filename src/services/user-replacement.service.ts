@@ -4,6 +4,7 @@ import { Task } from '../models/Task';
 import { TaskHistory } from '../models/TaskHistory';
 import { Client } from '../modules/clients/schemas/client.schema';
 import { ApiError } from '../common/errors/api-error';
+import { notificationDispatcher } from './notifications/notification-dispatcher.service';
 
 export interface ReplaceUserPayload {
   departingUserId: string;
@@ -11,6 +12,7 @@ export interface ReplaceUserPayload {
   reassignTasks?: boolean;
   reassignClients?: boolean;
   reassignServices?: boolean;
+  deactivateUser?: boolean;
 }
 
 export interface ReplaceUserResult {
@@ -20,8 +22,80 @@ export interface ReplaceUserResult {
   userDeactivated: boolean;
 }
 
+export interface ReplacementPreviewResult {
+  activeTasksCount: number;
+  clientsCount: number;
+  servicesCount: number;
+  user: {
+    _id: string;
+    name: string;
+    username: string;
+    email?: string;
+    photoUrl?: string;
+    role?: string;
+    isOwner: boolean;
+  };
+}
+
 /**
- * Phase 120: Atomic User Replacement Utility (Staff Handover)
+ * Preview scope of responsibilities for a departing staff member
+ */
+export const getUserReplacementPreviewService = async (
+  tenantId: Types.ObjectId,
+  userId: string
+): Promise<ReplacementPreviewResult> => {
+  if (!Types.ObjectId.isValid(userId)) {
+    throw new ApiError(400, 'Invalid user ID format provided', 'INVALID_USER_ID');
+  }
+
+  const tenantObjId = new Types.ObjectId(tenantId);
+  const userObjId = new Types.ObjectId(userId);
+
+  const user = await User.findOne({ _id: userObjId, tenantId: tenantObjId })
+    .populate('roleId', 'name')
+    .setOptions({ skipTenantPlugin: true });
+
+  if (!user) {
+    throw new ApiError(404, 'User not found in this organization', 'USER_NOT_FOUND');
+  }
+
+  const [activeTasksCount, clientsCount, servicesCount] = await Promise.all([
+    Task.countDocuments({
+      tenantId: tenantObjId,
+      status: { $nin: ['Completed', 'Cancelled'] },
+      $or: [
+        { assigneeIds: userObjId },
+        { 'subtasks.assignedUserId': userObjId }
+      ]
+    }),
+    Client.countDocuments({
+      tenantId: tenantObjId,
+      assignedUsers: userObjId
+    }),
+    Client.countDocuments({
+      tenantId: tenantObjId,
+      'subscribedServices.customUsers': userObjId
+    })
+  ]);
+
+  return {
+    activeTasksCount,
+    clientsCount,
+    servicesCount,
+    user: {
+      _id: user._id.toString(),
+      name: user.name,
+      username: user.username,
+      email: user.email,
+      photoUrl: user.photoUrl,
+      role: (user.roleId as any)?.name || 'Staff',
+      isOwner: user.isOwner || false
+    }
+  };
+};
+
+/**
+ * Atomic User Replacement Utility (Staff Handover)
  */
 export const replaceUserService = async (
   tenantId: Types.ObjectId,
@@ -32,7 +106,8 @@ export const replaceUserService = async (
     replacementUserId,
     reassignTasks = true,
     reassignClients = true,
-    reassignServices = true
+    reassignServices = true,
+    deactivateUser = true
   } = payload;
 
   if (!Types.ObjectId.isValid(departingUserId) || !Types.ObjectId.isValid(replacementUserId)) {
@@ -58,6 +133,11 @@ export const replaceUserService = async (
   }
   if (!replacementUser) {
     throw new ApiError(404, 'Replacement user not found in this organization', 'REPLACEMENT_USER_NOT_FOUND');
+  }
+
+  // Guard the Practice Owner
+  if (departingUser.isOwner) {
+    throw new ApiError(403, 'The practice owner account cannot be replaced or departed.', 'OWNER_PROTECTION');
   }
 
   let session: mongoose.ClientSession | null = null;
@@ -194,22 +274,45 @@ export const replaceUserService = async (
       }
     }
 
-    // 4. Deactivate Departing User
-    await User.updateOne(
-      { _id: departingObjId, tenantId: tenantObjId },
-      { $set: { isActive: false } },
-      sessionOption
-    );
+    // 4. Optionally Deactivate Departing User and Revoke Sessions
+    if (deactivateUser) {
+      await User.updateOne(
+        { _id: departingObjId, tenantId: tenantObjId },
+        {
+          $set: { isActive: false },
+          $inc: { tokenVersion: 1 }
+        },
+        sessionOption
+      );
+    }
 
     if (session && useTransaction) {
       await session.commitTransaction();
     }
 
+    // 5. Dispatch notification to the replacement user
+    notificationDispatcher.dispatch({
+      tenantId: tenantObjId,
+      recipients: [{ userId: replacementObjId, email: replacementUser.email, name: replacementUser.name }],
+      eventKey: 'task:assigned',
+      category: 'tasks',
+      title: 'Staff Handover: New Responsibilities Assigned',
+      message: `Responsibilities previously handled by ${departingUser.name} have been handed over to you: ${tasksReassignedCount} active tasks, ${clientsReassignedCount} client accounts.`,
+      link: '/tasks',
+      actorId: replacementObjId,
+      metadata: {
+        handover: true,
+        departingUserId,
+        tasksCount: tasksReassignedCount,
+        clientsCount: clientsReassignedCount
+      }
+    }).catch((err) => console.error('[replaceUserService] Notification error:', err));
+
     return {
       tasksReassignedCount,
       clientsReassignedCount,
       servicesReassignedCount,
-      userDeactivated: true
+      userDeactivated: deactivateUser
     };
   } catch (error) {
     if (session && useTransaction) {

@@ -10,6 +10,7 @@ import { sendStaffInvitationEmail } from '../../auth/services/email.service';
 import bcrypt from 'bcryptjs';
 
 import { PermissionResolverService } from '../../../services/permission-resolver.service';
+import { notificationDispatcher } from '../../../services/notifications/notification-dispatcher.service';
 
 const createUserSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -293,6 +294,38 @@ export const updateUser = asyncHandler(async (req: Request, res: Response) => {
   // Invalidate cached permissions for this user
   PermissionResolverService.invalidateUser(user._id.toString());
 
+  // Dispatch security notifications if role or activation status changed
+  if (updates.roleId !== undefined || updates.roleIds !== undefined) {
+    notificationDispatcher.dispatch({
+      tenantId: user.tenantId,
+      recipients: [{ userId: user._id, email: user.email, name: user.name }],
+      eventKey: 'user:role_changed',
+      category: 'security',
+      priority: 'high',
+      isMandatory: true,
+      title: 'Security Notice: Account Role Updated',
+      message: `Your system access role and permissions have been updated by ${(req as any).user?.name || 'Administrator'}.`,
+      link: `/settings/profile`,
+      actorId: (req as any).user?._id,
+      actorName: (req as any).user?.name
+    }).catch(err => console.error('[updateUser] Role change notification error:', err));
+  }
+
+  if (updates.isActive === false) {
+    notificationDispatcher.dispatch({
+      tenantId: user.tenantId,
+      recipients: [{ userId: user._id, email: user.email, name: user.name }],
+      eventKey: 'user:deactivated',
+      category: 'security',
+      priority: 'urgent',
+      isMandatory: true,
+      title: 'Security Alert: Account Deactivated',
+      message: `Your account in the organization has been deactivated.`,
+      actorId: (req as any).user?._id,
+      actorName: (req as any).user?.name
+    }).catch(err => console.error('[updateUser] Deactivation notification error:', err));
+  }
+
   const userResponse = user.toObject();
   delete userResponse.password;
   delete userResponse.refreshToken;
@@ -324,6 +357,22 @@ export const deleteUser = asyncHandler(async (req: Request, res: Response) => {
 /**
  * Phase 120: Atomic User Replacement Utility (Staff Handover)
  */
+export const getUserReplacementPreview = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.tenantId) {
+    throw new ApiError(403, 'Tenant context missing', 'FORBIDDEN');
+  }
+
+  const userId = req.query.userId as string;
+  if (!userId) {
+    throw new ApiError(400, 'userId query parameter is required', 'VALIDATION_FAILED');
+  }
+
+  const { getUserReplacementPreviewService } = await import('../../../services/user-replacement.service');
+  const preview = await getUserReplacementPreviewService(req.tenantId as any, userId);
+
+  return sendSuccess(res, 200, 'User replacement preview retrieved successfully', preview);
+});
+
 export const replaceUser = asyncHandler(async (req: Request, res: Response) => {
   if (!req.tenantId) {
     throw new ApiError(403, 'Tenant context missing', 'FORBIDDEN');
@@ -334,7 +383,8 @@ export const replaceUser = asyncHandler(async (req: Request, res: Response) => {
     replacementUserId,
     reassignTasks,
     reassignClients,
-    reassignServices
+    reassignServices,
+    deactivateUser
   } = req.body;
 
   if (!departingUserId || !replacementUserId) {
@@ -351,7 +401,8 @@ export const replaceUser = asyncHandler(async (req: Request, res: Response) => {
     replacementUserId,
     reassignTasks,
     reassignClients,
-    reassignServices
+    reassignServices,
+    deactivateUser
   });
 
   return sendSuccess(res, 200, 'User responsibilities replaced successfully', result);

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { ClientUser } from '../models/ClientUser';
 import { Client } from '../modules/clients/schemas/client.schema';
+import { Organization } from '../modules/auth/schemas';
 import { ApiError } from '../common/errors/api-error';
 import { sendSuccess } from '../common/responses/api-response';
 import { asyncHandler } from '../utils/async-handler';
@@ -10,6 +11,10 @@ import {
   generateOtp,
   generateMagicLinkToken
 } from '../services/client-auth.service';
+import {
+  sendMagicLinkEmail,
+  sendPortalOtpEmail
+} from '../modules/auth/services/email.service';
 
 /**
  * Password-based Client Portal Login
@@ -140,6 +145,19 @@ export const portalRequestOtp = asyncHandler(async (req: Request, res: Response)
 
   console.log(`[CLIENT PORTAL OTP] Generated code ${otp.code} for ${identifier}`);
 
+  // Send OTP to email if identifier is an email or user has an email on file
+  const targetEmail = user.email || (identifier.includes('@') ? normalized : undefined);
+  if (targetEmail) {
+    const org = await Organization.findById(user.tenantId);
+    const practiceName = org?.name || 'Your Advisory Firm';
+    sendPortalOtpEmail(
+      targetEmail,
+      otp.code,
+      user.name || client.name,
+      practiceName
+    ).catch((err) => console.error('[portalRequestOtp] Email send error:', err));
+  }
+
   return sendSuccess(res, 200, 'Verification code sent successfully', {
     identifier,
     expiresInSeconds: 600,
@@ -256,6 +274,20 @@ export const portalSendMagicLink = asyncHandler(async (req: Request, res: Respon
   const portalUrl = process.env.PORTAL_URL || 'http://localhost:3005';
   const magicUrl = `${portalUrl}/magic-login?token=${magic.token}`;
   console.log(`[CLIENT PORTAL MAGIC LINK] Generated magic link: ${magicUrl}`);
+
+  const org = await Organization.findById(user.tenantId);
+  const practiceName = org?.name || 'Your Advisory Firm';
+
+  try {
+    await sendMagicLinkEmail(
+      normalized,
+      magicUrl,
+      user.name || client.name,
+      practiceName
+    );
+  } catch (emailErr) {
+    console.error('[portalSendMagicLink] Failed to send magic link email via SMTP:', emailErr);
+  }
 
   return sendSuccess(res, 200, 'Magic link sent successfully to your email', {
     email: normalized,

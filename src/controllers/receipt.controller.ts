@@ -8,6 +8,8 @@ import {
   createReceiptWithTransaction,
   calculateAutoSettle
 } from '../services/receipt.service';
+import { notificationDispatcher } from '../services/notifications/notification-dispatcher.service';
+import { Client } from '../modules/clients/schemas/client.schema';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 
@@ -15,9 +17,7 @@ import mongoose from 'mongoose';
 const createReceiptSchema = z.object({
   clientId: z.string().min(1, 'Client ID is required'),
   date: z.string().optional(),
-  paymentMode: z
-    .enum(['Cash', 'Bank Transfer', 'Cheque', 'UPI', 'Other'])
-    .default('Bank Transfer'),
+  paymentMode: z.string().default('Bank Transfer'),
   referenceNumber: z.string().optional(),
   totalAmount: z.number().min(0.01, 'Amount must be greater than zero'),
   tdsAmount: z.number().min(0).default(0),
@@ -134,6 +134,28 @@ export const createReceipt = asyncHandler(
       req.tenantId as mongoose.Types.ObjectId,
       validatedData
     );
+
+    // Notify assigned account managers or admin about payment recorded
+    Client.findOne({ _id: validatedData.clientId, tenantId: req.tenantId })
+      .select('name assignedUsers')
+      .lean()
+      .then((clientDoc: any) => {
+        if (clientDoc && clientDoc.assignedUsers && clientDoc.assignedUsers.length > 0) {
+          notificationDispatcher.dispatch({
+            tenantId: req.tenantId as mongoose.Types.ObjectId,
+            recipients: clientDoc.assignedUsers.map((uid: any) => ({ userId: uid })),
+            eventKey: 'payment:received',
+            category: 'billing',
+            title: `Payment Recorded: ₹${validatedData.totalAmount}`,
+            message: `A payment receipt of ₹${validatedData.totalAmount} (${validatedData.paymentMode}) was recorded for client "${clientDoc.name}".`,
+            link: `/billing/receipts`,
+            actorId: req.user?._id,
+            actorName: req.user?.name,
+            metadata: { receiptId: (receipt as any)?._id, clientId: validatedData.clientId, amount: validatedData.totalAmount }
+          }).catch(err => console.error('[createReceipt] Notification error:', err));
+        }
+      })
+      .catch(err => console.error('[createReceipt] Client lookup for notification error:', err));
 
     sendSuccess(res, 201, 'Receipt created successfully', receipt);
   }

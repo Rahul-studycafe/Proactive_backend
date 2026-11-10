@@ -112,3 +112,112 @@ export const sendStaffInvitationEmail = async (
     console.error('Failed to send staff invitation email:', err);
   }
 };
+
+/**
+ * Sends a one-time cryptographic magic sign-in link to a client portal user.
+ */
+export const sendMagicLinkEmail = async (
+  to: string,
+  magicUrl: string,
+  clientName: string,
+  orgName: string
+): Promise<void> => {
+  const mailOptions = {
+    from: `"${orgName} Portal" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: `Your Sign-In Link for ${orgName} Client Portal`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 580px; margin: 0 auto; padding: 32px 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+        <div style="text-align: center; margin-bottom: 28px;">
+          <h2 style="color: #0f172a; margin: 0 0 6px 0; font-size: 22px; font-weight: 700;">${orgName}</h2>
+          <span style="display: inline-block; padding: 4px 12px; background-color: #f1f5f9; color: #475569; border-radius: 9999px; font-size: 12px; font-weight: 500;">
+            Client Self-Service Portal
+          </span>
+        </div>
+        
+        <p style="color: #334155; font-size: 15px; line-height: 1.6; margin-bottom: 12px;">
+          Hello <strong>${clientName}</strong>,
+        </p>
+        <p style="color: #334155; font-size: 15px; line-height: 1.6; margin-bottom: 28px;">
+          We received a request to access your client portal. Click the button below to sign in instantly without a password:
+        </p>
+        
+        <div style="text-align: center; margin: 32px 0;">
+          <a href="${magicUrl}" style="background-color: #0284c7; color: #ffffff; padding: 14px 36px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px; display: inline-block; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.2);">
+            Sign In to Portal
+          </a>
+        </div>
+        
+        <div style="background-color: #f8fafc; border-radius: 8px; padding: 14px 16px; margin: 24px 0;">
+          <p style="color: #64748b; font-size: 13px; line-height: 1.5; margin: 0;">
+            ⏳ This magic link will expire in <strong>15 minutes</strong> and can only be used once. If you did not request this link, you can safely ignore this email.
+          </p>
+        </div>
+        
+        <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+        
+        <p style="color: #94a3b8; font-size: 12px; line-height: 1.5; margin: 0; word-break: break-all;">
+          Button not working? Copy and paste this URL into your browser:<br/>
+          <a href="${magicUrl}" style="color: #0284c7; text-decoration: underline;">${magicUrl}</a>
+        </p>
+      </div>
+    `,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`[EMAIL] Magic link email successfully dispatched to ${to}`);
+  } catch (err) {
+    console.error(`[EMAIL ERROR] Failed to send magic link email to ${to}:`, err);
+    throw err;
+  }
+};
+
+/**
+ * Sends a 6-digit login OTP to a client portal user.
+ */
+export const sendPortalOtpEmail = async (
+  to: string,
+  otpCode: string,
+  clientName: string,
+  orgName: string
+): Promise<void> => {
+  const mailOptions = {
+    from: `"${orgName} Portal" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: `Your Verification Code - ${orgName} Portal`,
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 580px; margin: 0 auto; padding: 32px 24px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+        <div style="text-align: center; margin-bottom: 28px;">
+          <h2 style="color: #0f172a; margin: 0 0 6px 0; font-size: 22px; font-weight: 700;">${orgName}</h2>
+          <span style="display: inline-block; padding: 4px 12px; background-color: #f1f5f9; color: #475569; border-radius: 9999px; font-size: 12px; font-weight: 500;">
+            Client Self-Service Portal
+          </span>
+        </div>
+        
+        <p style="color: #334155; font-size: 15px; line-height: 1.6; margin-bottom: 12px;">
+          Hello <strong>${clientName}</strong>,
+        </p>
+        <p style="color: #334155; font-size: 15px; line-height: 1.6; margin-bottom: 20px;">
+          Use the following 6-digit verification code to complete your login to the client portal:
+        </p>
+        
+        <div style="background-color: #f1f5f9; padding: 18px; border-radius: 8px; text-align: center; margin: 24px 0;">
+          <span style="font-size: 30px; font-weight: 700; letter-spacing: 8px; color: #0f172a; font-family: monospace;">${otpCode}</span>
+        </div>
+        
+        <p style="color: #64748b; font-size: 13px; line-height: 1.5; margin: 0;">
+          ⏳ This code is valid for <strong>10 minutes</strong>. If you did not request this verification code, please ignore this email.
+        </p>
+      </div>
+    `,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`[EMAIL] Portal OTP email successfully dispatched to ${to}`);
+  } catch (err) {
+    console.error(`[EMAIL ERROR] Failed to send portal OTP email to ${to}:`, err);
+    throw err;
+  }
+};

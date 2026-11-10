@@ -14,14 +14,16 @@ import {
   scanDscExpiriesService,
   getDscSummaryKpiService
 } from '../services/dsc.service';
+import { notificationDispatcher } from '../services/notifications/notification-dispatcher.service';
+import mongoose from 'mongoose';
 
 const createDscSchema = z.object({
   clientId: z.string().min(1, 'Client ID is required'),
   certificateName: z.string().min(2, 'Certificate name is required'),
-  certificateClass: z.enum(['Class 2', 'Class 3']).optional(),
-  tokenType: z.enum(['ePass2003', 'ProxKey', 'mToken', 'Watchdata', 'Other']).optional(),
+  certificateClass: z.string().optional(),
+  tokenType: z.string().optional(),
   tokenSerialNumber: z.string().optional(),
-  issuingAuthority: z.enum(['eMudhra', 'Capricorn', 'Vsign', 'Sify', 'IDSign', 'Other']).optional(),
+  issuingAuthority: z.string().optional(),
   issueDate: z.string().min(1, 'Issue date is required'),
   expiryDate: z.string().min(1, 'Expiry date is required'),
   physicalLocation: z.string().min(1, 'Physical office storage location is required'),
@@ -32,10 +34,10 @@ const createDscSchema = z.object({
 
 const updateDscSchema = z.object({
   certificateName: z.string().min(2).optional(),
-  certificateClass: z.enum(['Class 2', 'Class 3']).optional(),
-  tokenType: z.enum(['ePass2003', 'ProxKey', 'mToken', 'Watchdata', 'Other']).optional(),
+  certificateClass: z.string().optional(),
+  tokenType: z.string().optional(),
   tokenSerialNumber: z.string().optional(),
-  issuingAuthority: z.enum(['eMudhra', 'Capricorn', 'Vsign', 'Sify', 'IDSign', 'Other']).optional(),
+  issuingAuthority: z.string().optional(),
   issueDate: z.string().optional(),
   expiryDate: z.string().optional(),
   physicalLocation: z.string().optional(),
@@ -113,6 +115,21 @@ export const logDscHandover = asyncHandler(async (req: Request, res: Response) =
   }
 
   const result = await logDscHandoverService(req.tenantId!, req.user!._id, id, parsed.data);
+
+  // Dispatch dsc:handover notification to actor / team
+  notificationDispatcher.dispatch({
+    tenantId: req.tenantId as mongoose.Types.ObjectId,
+    recipients: [{ userId: req.user!._id }],
+    eventKey: 'dsc:handover',
+    category: 'dsc_vault',
+    title: `DSC Handover Logged: ${parsed.data.action}`,
+    message: `DSC "${result.dsc?.certificateName || 'Token'}" was ${parsed.data.action.toLowerCase()} (${parsed.data.transferredToName}).`,
+    link: `/vaults/dsc`,
+    actorId: req.user?._id,
+    actorName: req.user?.name,
+    metadata: { dscId: id, action: parsed.data.action, transferredTo: parsed.data.transferredToName }
+  }).catch(err => console.error('[logDscHandover] Notification error:', err));
+
   return sendSuccess(res, 201, 'DSC handover logged successfully', result);
 });
 

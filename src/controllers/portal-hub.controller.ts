@@ -15,6 +15,7 @@ import { calculateClientLedger } from '../services/ledger.service';
 import { ClientQueryTicket } from '../models/ClientQueryTicket';
 import { Client } from '../modules/clients/schemas/client.schema';
 import { applyAdvanceToInvoiceService } from '../services/receipt.service';
+import { notificationDispatcher } from '../services/notifications/notification-dispatcher.service';
 
 // ─── Phase 126: Compliance Calendar & Milestones ──────────────────
 export const getComplianceCalendar = asyncHandler(
@@ -146,6 +147,61 @@ export const downloadPortalDocument = asyncHandler(
       fileName: document.fileName,
       fileUrl: document.fileUrl
     });
+  }
+);
+
+/**
+ * Phase 131: Client Self-Initiated / Advance Document Upload
+ * POST /api/v1/portal/documents/upload
+ */
+export const uploadPortalDocument = asyncHandler(
+  async (req: Request, res: Response) => {
+    if (!req.file) {
+      throw new ApiError(400, 'No document file uploaded');
+    }
+
+    const { category, notes, title } = req.body;
+    const originalName = title ? `${title.trim()}${path.extname(req.file.originalname)}` : req.file.originalname;
+
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:5050';
+    const fileUrl = `${backendUrl}/uploads/portal/${req.file.filename}`;
+
+    const document = await DocumentModel.create({
+      tenantId: req.tenantId,
+      clientId: req.clientId,
+      category: category ? String(category).trim() : 'General',
+      fileName: originalName,
+      fileUrl,
+      fileSize: req.file.size,
+      mimeType: req.file.mimetype,
+      clientUserId: req.clientUser!._id,
+      uploadedByModel: 'ClientUser',
+      source: 'portal_client_upload',
+      notes: notes ? String(notes).trim() : undefined,
+    });
+
+    // Notify assigned staff
+    try {
+      const client = await Client.findById(req.clientId).select('name assignedUsers');
+      if (client && client.assignedUsers && client.assignedUsers.length > 0) {
+        notificationDispatcher.dispatch({
+          tenantId: req.tenantId!,
+          recipients: client.assignedUsers.map((u: any) => ({ userId: u })),
+          eventKey: 'document:received',
+          category: 'documents',
+          priority: 'medium',
+          title: `New Client Document: ${client.name}`,
+          message: `${req.clientUser?.name || 'Client'} submitted a document in advance: "${originalName}"${notes ? ` (${notes})` : ''}.`,
+          link: `/clients/${req.clientId}?tab=documents`,
+          actorId: req.clientUser!._id,
+          actorName: req.clientUser?.name || 'Client Portal User',
+        }).catch((err) => console.error('[uploadPortalDocument] Notification error:', err));
+      }
+    } catch (notifErr) {
+      console.error('[uploadPortalDocument] Notification error:', notifErr);
+    }
+
+    sendSuccess(res, 201, 'Document uploaded successfully to your vault', document);
   }
 );
 

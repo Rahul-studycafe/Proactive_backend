@@ -8,7 +8,7 @@ import { ApiError } from '../common/errors/api-error';
 export interface CreateReceiptInput {
   clientId: string;
   date?: string | Date;
-  paymentMode?: 'Cash' | 'Bank Transfer' | 'Cheque' | 'UPI' | 'Other';
+  paymentMode?: string;
   referenceNumber?: string;
   totalAmount: number;
   tdsAmount?: number;

@@ -12,7 +12,7 @@ export interface IReceipt extends Document {
   clientId: mongoose.Types.ObjectId;
   receiptNo: string;
   date: Date;
-  paymentMode: 'Cash' | 'Bank Transfer' | 'Cheque' | 'UPI' | 'Other';
+  paymentMode: string;
   referenceNumber?: string;
   totalAmount: number;
   tdsAmount: number;
@@ -41,7 +41,6 @@ const receiptSchema = new Schema<IReceipt>(
     date: { type: Date, required: true, default: Date.now },
     paymentMode: {
       type: String,
-      enum: ['Cash', 'Bank Transfer', 'Cheque', 'UPI', 'Other'],
       default: 'Bank Transfer'
     },
     referenceNumber: { type: String },

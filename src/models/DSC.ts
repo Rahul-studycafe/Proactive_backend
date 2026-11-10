@@ -10,10 +10,10 @@ export interface IDSC extends Document {
   tenantId: mongoose.Types.ObjectId;
   clientId: mongoose.Types.ObjectId;
   certificateName: string; // e.g. "Rahul Chauhan - Director DSC"
-  certificateClass: 'Class 2' | 'Class 3';
-  tokenType: 'ePass2003' | 'ProxKey' | 'mToken' | 'Watchdata' | 'Other';
+  certificateClass: string;
+  tokenType: string;
   tokenSerialNumber?: string; // Hardware USB dongle serial
-  issuingAuthority: 'eMudhra' | 'Capricorn' | 'Vsign' | 'Sify' | 'IDSign' | 'Other';
+  issuingAuthority: string;
   issueDate: Date;
   expiryDate: Date;
   physicalLocation: string; // e.g. "Safe Box 1, Slot D-14"
@@ -47,12 +47,10 @@ const dscSchema = new Schema<IDSC>(
     },
     certificateClass: {
       type: String,
-      enum: DSC_CLASSES,
       default: 'Class 3'
     },
     tokenType: {
       type: String,
-      enum: TOKEN_TYPES,
       default: 'ePass2003'
     },
     tokenSerialNumber: {
@@ -61,7 +59,6 @@ const dscSchema = new Schema<IDSC>(
     },
     issuingAuthority: {
       type: String,
-      enum: ISSUING_AUTHORITIES,
       default: 'eMudhra'
     },
     issueDate: {

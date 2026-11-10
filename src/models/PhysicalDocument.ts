@@ -39,7 +39,7 @@ export interface IPhysicalDocument extends MongooseDocument {
   clientId: mongoose.Types.ObjectId;
   date: Date;
   category: DocumentCategory;
-  documentType: PhysicalDocumentType;
+  documentType: string;
   documentName: string;
   isReturnable: boolean;
   returnDate?: Date;
@@ -83,7 +83,6 @@ const physicalDocumentSchema = new Schema<IPhysicalDocument>(
     },
     documentType: {
       type: String,
-      enum: PHYSICAL_DOCUMENT_TYPES,
       required: true
     },
     documentName: {
@@ -211,3 +210,4 @@ export const PhysicalDocumentModel = mongoose.model<IPhysicalDocument>(
   'PhysicalDocument',
   physicalDocumentSchema
 );
+export const PhysicalDocument = PhysicalDocumentModel;

@@ -42,6 +42,8 @@ import notificationRoutes from './routes/notification.routes';
 import accountingRoutes from './routes/accounting.routes';
 import portalRoutes from './routes/portal.routes';
 import clientPaymentRoutes from './routes/client-payment.routes';
+import configurationRoutes from './routes/configuration.routes';
+import userNotificationRoutes from './routes/user-notification.routes';
 
 const app: Express = express();
 
@@ -183,6 +185,8 @@ app.use('/api/v1/quotations', quotationRoutes);
 app.use('/api/v1/reports', reportRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/accounting', accountingRoutes);
+app.use('/api/v1/configurations', configurationRoutes);
+app.use('/api/v1/user-notifications', userNotificationRoutes);
 
 // ─── Fallback & Error Handling ───────────────────────────────────
 app.use((req: Request, res: Response, next: NextFunction) => {

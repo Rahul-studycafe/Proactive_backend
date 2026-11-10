@@ -79,13 +79,26 @@ export const getClientDocuments = asyncHandler(async (req: Request, res: Respons
   const { clientId } = req.params;
   const { category } = req.query;
 
-  const query: any = { clientId, tenantId: req.tenantId, taskId: { $exists: false } };
+  // Include direct client vault documents, request fulfillments, and portal client self-uploads
+  const query: any = {
+    clientId,
+    tenantId: req.tenantId,
+    $or: [
+      { taskId: { $exists: false } },
+      { source: { $in: ['portal_client_upload', 'magic_link', 'client_portal'] } },
+      { clientUserId: { $exists: true } }
+    ]
+  };
   if (category) {
     query.category = category;
   }
 
+  // Ensure ClientUser model is registered before populate
+  await import('../models/ClientUser');
+
   const documents = await DocumentModel.find(query)
-    .populate('uploadedBy', 'name photoUrl')
+    .populate('uploadedBy', 'name photoUrl email')
+    .populate('clientUserId', 'name email phone')
     .sort({ createdAt: -1 });
 
   sendSuccess(res, 200, 'Documents fetched successfully', documents);

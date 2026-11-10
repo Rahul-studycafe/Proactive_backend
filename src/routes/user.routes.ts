@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createUser, getUsers, getUserById, updateUser, replaceUser, deleteUser } from '../modules/users/controllers/user.controller';
+import { createUser, getUsers, getUserById, updateUser, replaceUser, getUserReplacementPreview, deleteUser } from '../modules/users/controllers/user.controller';
 import { authenticate } from '../middlewares/authenticate';
 import { authorize } from '../middlewares/authorize';
 import { checkSeatLimit } from '../middlewares/plan-guard';
@@ -10,7 +10,8 @@ const router = Router();
 router.use(authenticate);
 
 // Phase 120: Atomic User Replacement Utility (Staff Handover)
-router.post('/replace-user', replaceUser);
+router.get('/replacement-preview', authorize(['user:edit', 'user:delete', 'settings:manage', 'user:view']), getUserReplacementPreview);
+router.post('/replace-user', authorize(['user:edit', 'user:delete', 'settings:manage']), replaceUser);
 
 // List users (requires 'user:view' or task assignment/creation permissions)
 router.get('/', authorize(['user:view', 'task:assign', 'task:create', 'task:edit']), getUsers);

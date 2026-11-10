@@ -13,7 +13,8 @@
     "lint": "eslint .",
     "test": "jest",
     "prepare": "husky install",
-    "seed:promo": "ts-node-dev --transpile-only scripts/add-promocode.ts"
+    "seed:promo": "ts-node-dev --transpile-only scripts/add-promocode.ts",
+    "migrate:configs": "ts-node-dev --transpile-only scripts/migrate-tenant-configurations.ts"
   },
   "keywords": [],
   "author": "",

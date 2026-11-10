@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document } from 'mongoose';
 import { tenantPlugin } from '../common/plugins/tenant.plugin';
 
-export type ExpensePaymentMode = 'Bank Transfer' | 'Cash' | 'UPI' | 'Credit Card' | 'Cheque';
+export type ExpensePaymentMode = string;
 
 export interface IExpense extends Document {
   tenantId: mongoose.Types.ObjectId;
@@ -71,7 +71,6 @@ const expenseSchema = new Schema<IExpense>(
     },
     paymentMode: {
       type: String,
-      enum: ['Bank Transfer', 'Cash', 'UPI', 'Credit Card', 'Cheque'],
       required: true,
       default: 'Bank Transfer'
     },

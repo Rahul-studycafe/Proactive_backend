@@ -6,6 +6,7 @@ import { Task, TASK_STATUSES } from '../models/Task';
 import { Service } from '../modules/services/schemas';
 import { TaskHistory } from '../models/TaskHistory';
 import { createDocumentRequestService } from '../services/document-request.service';
+import { notificationDispatcher } from '../services/notifications/notification-dispatcher.service';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 
@@ -221,6 +222,22 @@ export const createTask = asyncHandler(async (req: Request, res: Response) => {
       },
       req.user!._id
     ).catch(err => console.error('[createTask] Auto doc request error:', err));
+  }
+
+  // Dispatch task:assigned notification if task has assignees
+  if (task.assigneeIds && task.assigneeIds.length > 0) {
+    notificationDispatcher.dispatch({
+      tenantId: req.tenantId as mongoose.Types.ObjectId,
+      recipients: task.assigneeIds.map((id: any) => ({ userId: id })),
+      eventKey: 'task:assigned',
+      category: 'tasks',
+      title: 'New Task Assigned',
+      message: `You have been assigned to task: ${task.description || (service?.name ? `${service.name} compliance task` : 'Operational Task')}`,
+      link: `/tasks?taskId=${task._id}`,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      metadata: { taskId: task._id }
+    }).catch(err => console.error('[createTask] Notification error:', err));
   }
 
   sendSuccess(res, 201, 'Task created successfully', task);
@@ -445,6 +462,21 @@ export const addSubtask = asyncHandler(async (req: Request, res: Response) => {
   
   await task.save();
 
+  if (assignedUserId) {
+    notificationDispatcher.dispatch({
+      tenantId: req.tenantId as mongoose.Types.ObjectId,
+      recipients: [{ userId: assignedUserId }],
+      eventKey: 'task:subtask_assigned',
+      category: 'tasks',
+      title: 'New Subtask Assigned',
+      message: `You were assigned a subtask: "${title}" in task "${task.description || 'Task'}"`,
+      link: `/tasks?taskId=${task._id}`,
+      actorId: req.user?._id,
+      actorName: req.user?.name,
+      metadata: { taskId: task._id }
+    }).catch(err => console.error('[addSubtask] Notification error:', err));
+  }
+
   // Populate assignee for the newly added subtask if possible, or we can let frontend refetch
   sendSuccess(res, 201, 'Subtask added', task.subtasks[task.subtasks.length - 1]);
 });
@@ -577,6 +609,22 @@ export const updateTaskStatus = asyncHandler(async (req: Request, res: Response)
       details: `Status changed from ${task.status} to ${status}`,
       createdBy: (req as any).user._id
     });
+
+    // Notify assignees about status update
+    if (task.assigneeIds && task.assigneeIds.length > 0) {
+      notificationDispatcher.dispatch({
+        tenantId: req.tenantId as mongoose.Types.ObjectId,
+        recipients: task.assigneeIds.map((id: any) => ({ userId: id })),
+        eventKey: 'task:status_changed',
+        category: 'tasks',
+        title: `Task Status: ${status}`,
+        message: `Task "${task.description || 'Task'}" status was changed to "${status}" by ${(req as any).user?.name || 'Staff'}.`,
+        link: `/tasks?taskId=${task._id}`,
+        actorId: req.user?._id,
+        actorName: req.user?.name,
+        metadata: { taskId: task._id, oldStatus: task.status, newStatus: status }
+      }).catch(err => console.error('[updateTaskStatus] Notification error:', err));
+    }
   }
 
   sendSuccess(res, 200, 'Task status updated', updatedDoc);

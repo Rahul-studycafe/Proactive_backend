@@ -125,7 +125,13 @@ export const PERMISSION_CATALOGUE: PermissionDefinition[] = [
   { id: 'role:view', resource: 'role', action: 'view', name: 'View Roles & Permissions', description: 'View tenant role configurations', category: 'Firm Administration', supportsScope: false },
   { id: 'role:manage', resource: 'role', action: 'manage', name: 'Manage Roles', description: 'Create, customize and delete tenant roles', category: 'Firm Administration', supportsScope: false },
   { id: 'settings:view', resource: 'settings', action: 'view', name: 'View Settings', description: 'Access firm settings hub', category: 'Firm Administration', supportsScope: false },
-  { id: 'settings:manage', resource: 'settings', action: 'manage', name: 'Manage Firm Settings', description: 'Configure billing entities, payment gateways, automation triggers', category: 'Firm Administration', supportsScope: false }
+  { id: 'settings:manage', resource: 'settings', action: 'manage', name: 'Manage Firm Settings', description: 'Configure billing entities, payment gateways, automation triggers', category: 'Firm Administration', supportsScope: false },
+  { id: 'configuration:view', resource: 'configuration', action: 'view', name: 'View Configurations', description: 'Browse and search configured dropdown values', category: 'Firm Administration', supportsScope: false },
+  { id: 'configuration:create', resource: 'configuration', action: 'create', name: 'Add Configuration Options', description: 'Add new options to dropdowns and taxonomy catalogs', category: 'Firm Administration', supportsScope: false },
+  { id: 'configuration:update', resource: 'configuration', action: 'update', name: 'Update Configurations', description: 'Edit labels, descriptions, and active status of dropdown options', category: 'Firm Administration', supportsScope: false },
+  { id: 'configuration:delete', resource: 'configuration', action: 'delete', name: 'Delete Configurations', description: 'Delete or deactivate unused dropdown options', category: 'Firm Administration', supportsScope: false, isDangerous: true },
+  { id: 'notification_settings:view', resource: 'notification_settings', action: 'view', name: 'View Notification Settings', description: 'View firm notification policies and channel options', category: 'Firm Administration', supportsScope: false },
+  { id: 'notification_settings:manage', resource: 'notification_settings', action: 'manage', name: 'Manage Notification Policies', description: 'Configure organization-level notification defaults and mandatory alerts', category: 'Firm Administration', supportsScope: false, isDangerous: true }
 ];
 
 export interface RoleBlueprint {
@@ -167,6 +173,7 @@ export function getDefaultRoleBlueprints(): RoleBlueprint[] {
       p.resource === 'expense' ||
       p.resource === 'dsc' ||
       p.resource === 'document' ||
+      p.resource === 'configuration' ||
       p.id === 'report:view' ||
       p.id === 'report:export' ||
       p.id === 'automation:run' ||
@@ -192,6 +199,8 @@ export function getDefaultRoleBlueprints(): RoleBlueprint[] {
       staffPerms[p.id] = { allowed: true, scope: 'assigned_only' };
     } else if (p.id === 'attendance:view_self' || p.id === 'attendance:matrix_view_self') {
       staffPerms[p.id] = { allowed: true, scope: 'assigned_only' };
+    } else if (p.id === 'configuration:view' || p.id === 'configuration:create') {
+      staffPerms[p.id] = { allowed: true, scope: 'everything' };
     } else {
       staffPerms[p.id] = { allowed: false, scope: 'assigned_only' };
     }

@@ -38,7 +38,7 @@ export interface ICreditNote extends Document {
   invoiceId: mongoose.Types.ObjectId;
   creditNoteNo: string; // e.g. "CN-001"
   date: Date;
-  reason: 'Overcharge Correction' | 'Service Cancellation' | 'Goodwill Discount' | 'Deficiency of Service' | 'Other';
+  reason: string;
   items: ICreditNoteItem[];
   totals: {
     subtotal: number;
@@ -91,7 +91,6 @@ const creditNoteSchema = new Schema<ICreditNote>(
     },
     reason: {
       type: String,
-      enum: CREDIT_NOTE_REASONS,
       default: 'Overcharge Correction'
     },
     items: [
