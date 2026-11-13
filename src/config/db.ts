@@ -1,4 +1,12 @@
+import dns from 'node:dns';
 import mongoose from 'mongoose';
+
+// Ensure SRV DNS records resolve reliably across local ISPs and Windows environments
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+} catch {
+  // Fallback to system DNS if custom servers cannot be set
+}
 
 const connectDB = async (retries = 5, delay = 5000): Promise<void> => {
   const uri = process.env.MONGO_URI || 'mongodb://localhost:27017/proactive';

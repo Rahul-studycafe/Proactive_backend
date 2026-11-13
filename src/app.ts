@@ -44,6 +44,7 @@ import portalRoutes from './routes/portal.routes';
 import clientPaymentRoutes from './routes/client-payment.routes';
 import configurationRoutes from './routes/configuration.routes';
 import userNotificationRoutes from './routes/user-notification.routes';
+import ssoRoutes from './routes/sso.routes';
 
 const app: Express = express();
 
@@ -134,6 +135,7 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
 });
 
 // Auth routes are public (register, login, refresh)
+app.use('/api/v1/auth/sso', ssoRoutes);
 app.use('/api/v1/auth', authRoutes);
 
 // Payment routes (has both public pricing and protected checkout)

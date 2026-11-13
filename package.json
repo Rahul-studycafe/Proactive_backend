@@ -14,7 +14,8 @@
     "test": "jest",
     "prepare": "husky install",
     "seed:promo": "ts-node-dev --transpile-only scripts/add-promocode.ts",
-    "migrate:configs": "ts-node-dev --transpile-only scripts/migrate-tenant-configurations.ts"
+    "migrate:configs": "ts-node-dev --transpile-only scripts/migrate-tenant-configurations.ts",
+    "seed:sso-client": "ts-node-dev --transpile-only src/scripts/seed-sso-client.ts"
   },
   "keywords": [],
   "author": "",
