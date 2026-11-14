@@ -6,44 +6,52 @@ import { ApiError } from '../utils/ApiError';
 import { Organization } from '../modules/auth/schemas';
 
 export const getPublicWebsiteConfig = asyncHandler(async (req: Request, res: Response) => {
-  const subdomain = req.query.subdomain as string;
-  const host = req.headers.host || '';
+  const subdomain = (req.query.subdomain as string) || '';
+  
+  // Extract caller hostname from referer/origin if present
+  let originHost = '';
+  try {
+    const originUrl = req.headers.referer || req.headers.origin || '';
+    if (originUrl) {
+      originHost = new URL(originUrl).hostname;
+    }
+  } catch {}
+
+  const host = originHost || req.headers.host || '';
 
   let query: any = {};
   if (subdomain) {
     query = { subdomain: subdomain.toLowerCase() };
   } else if (host && !host.includes('localhost') && !host.includes('127.0.0.1')) {
     const parts = host.split('.');
-    if (parts.length > 2) {
+    // Exclude generic shared platform subdomains from matching a specific tenant
+    if (parts.length > 2 && !['api-pms', 'pms', 'clients', 'portal', 'www'].includes(parts[0].toLowerCase())) {
       query = { subdomain: parts[0].toLowerCase() };
-    } else {
+    } else if (!host.includes('automationcafe.in')) {
       query = { customDomain: host.toLowerCase() };
     }
   }
 
   let settings = Object.keys(query).length > 0 ? await TenantWebsiteSettings.findOne(query) : null;
-  if (!settings) {
-    settings = await TenantWebsiteSettings.findOne({ isPublished: true });
-  }
 
   if (!settings) {
-    // Default fallback branding
+    // Default fallback branding for the shared client portal
     return sendSuccess(res, 200, 'Website config resolved', {
       branding: {
-        firmName: 'PMS Advisory & CA Practice',
+        firmName: 'Client Portal',
         logoUrl: '',
         faviconUrl: '',
         brandColor: '#2563eb'
       },
       hero: {
         title: 'Client Self-Service Portal',
-        subtitle: 'Access statutory filing status, download acknowledged tax returns, and track invoices securely.',
+        subtitle: 'Track statutory filings, view acknowledged tax returns, and access invoices securely.',
         bannerImageUrl: ''
       },
       contact: {
         email: 'support@pms.local',
         phone: '+91 98765 43210',
-        address: 'Practice Office, Tech City'
+        address: 'Practice Office'
       },
       services: [
         { title: 'GST Filings & Advisory', description: 'Monthly GSTR-3B & GSTR-1 compliances' },
