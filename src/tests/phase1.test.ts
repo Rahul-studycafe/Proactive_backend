@@ -10,7 +10,7 @@ describe('Phase 1: Project Initialization & Express Setup', () => {
     expect(response.body.success).toBe(true);
     expect(response.body.message).toBe('API is running');
     expect(response.body.meta).toBeDefined();
-    expect(response.body.meta.service).toBe('Proactive-backend');
+    expect(response.body.meta.service).toBe('pms-backend');
   });
 
   it('should return 404 for an unknown route', async () => {

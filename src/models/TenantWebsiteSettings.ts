@@ -36,7 +36,7 @@ const TenantWebsiteSettingsSchema = new Schema<ITenantWebsiteSettings>(
     subdomain: { type: String, lowercase: true, trim: true, index: true },
     customDomain: { type: String, lowercase: true, trim: true, index: true },
     branding: {
-      firmName: { type: String, default: 'Proactive Advisory' },
+      firmName: { type: String, default: 'PMS Advisory' },
       logoUrl: { type: String, default: '' },
       faviconUrl: { type: String, default: '' },
       brandColor: { type: String, default: '#2563eb' }

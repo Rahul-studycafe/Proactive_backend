@@ -123,7 +123,7 @@ export const createDocumentRequestService = async (
 
   // Organization branding for email
   const organization = await Organization.findById(tenantId);
-  const firmName = organization?.name || 'Proactive Accounting Suite';
+  const firmName = organization?.name || 'PMS Accounting Suite';
 
   // Dispatch email notification to client if email exists
   let emailDispatched = false;
@@ -554,7 +554,7 @@ export const resendDocumentRequestService = async (
   }
 
   const organization = await Organization.findById(tenantId);
-  const firmName = organization?.name || 'Proactive Accounting Suite';
+  const firmName = organization?.name || 'PMS Accounting Suite';
   const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8080';
   const uploadUrl = `${frontendUrl}/public/upload/${req.token}`;
 

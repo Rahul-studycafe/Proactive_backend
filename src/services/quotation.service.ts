@@ -468,7 +468,7 @@ export class QuotationService {
       });
 
       await transporter.sendMail({
-        from: `"Practice Pro" <${process.env.SMTP_FROM || 'proposals@proactiveapp.com'}>`,
+        from: `"PMS Quotations" <${process.env.SMTP_FROM || process.env.EMAIL_USER || 'proposals@pmsapp.in'}>`,
         to: recipientEmail,
         subject: `Quotation ${quotation.quotationNo} from Practice`,
         html: htmlBody
@@ -576,7 +576,7 @@ export class QuotationService {
     return {
       quotation,
       firm: {
-        name: billingEntity?.name || org?.name || 'Proactive Firm',
+        name: billingEntity?.name || org?.name || 'PMS Firm',
         legalName: billingEntity?.legalName || org?.name,
         gstin: billingEntity?.gstin || org?.gstin,
         pan: billingEntity?.pan || org?.pan,

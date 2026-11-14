@@ -153,8 +153,8 @@ export class PaymentGatewayService {
 
     if (!upiVpa || !merchantName) {
       const org = await Organization.findById(tenantId).select('name');
-      merchantName = merchantName || org?.name || 'Proactive Practice';
-      upiVpa = upiVpa || 'payment@proactive';
+      merchantName = merchantName || org?.name || 'PMS Practice';
+      upiVpa = upiVpa || 'payment@pms';
     }
 
     const formattedAmount = amountDue.toFixed(2);
@@ -313,8 +313,8 @@ export class PaymentGatewayService {
 
     if (!upiVpa || !merchantName) {
       const org = await Organization.findById(tenantId).select('name');
-      merchantName = merchantName || org?.name || 'Proactive Practice';
-      upiVpa = upiVpa || 'payment@proactive';
+      merchantName = merchantName || org?.name || 'PMS Practice';
+      upiVpa = upiVpa || 'payment@pms';
     }
 
     const formattedAmount = amountDue.toFixed(2);

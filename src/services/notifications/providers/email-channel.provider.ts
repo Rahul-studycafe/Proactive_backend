@@ -67,8 +67,9 @@ export class EmailChannelProvider implements INotificationChannelProvider {
 
     const fromAddress =
       process.env.EMAIL_FROM ||
+      process.env.SMTP_FROM ||
       process.env.EMAIL_USER ||
-      'no-reply@proactiveapp.com';
+      'no-reply@pmsapp.in';
 
     const emailHtml = `
       <div style="background-color: #f8fafc; padding: 32px 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
@@ -79,7 +80,7 @@ export class EmailChannelProvider implements INotificationChannelProvider {
               <table border="0" cellpadding="0" cellspacing="0" width="100%">
                 <tr>
                   <td>
-                    <span style="font-size: 20px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px;">Proactive</span>
+                    <span style="font-size: 20px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px;">PMS</span>
                     <span style="font-size: 13px; color: #38bdf8; font-weight: 600; margin-left: 8px;">Practice System</span>
                   </td>
                   <td align="right">
@@ -110,7 +111,7 @@ export class EmailChannelProvider implements INotificationChannelProvider {
                 <tr>
                   <td align="center" style="padding: 8px 0 16px 0;">
                     <a href="${fullActionUrl}" style="background-color: #0284c7; color: #ffffff; text-decoration: none; padding: 12px 28px; font-size: 14px; font-weight: 600; border-radius: 8px; display: inline-block;">
-                      View in Proactive &rarr;
+                      View in PMS &rarr;
                     </a>
                   </td>
                 </tr>
@@ -131,9 +132,9 @@ export class EmailChannelProvider implements INotificationChannelProvider {
 
     try {
       await this.transporter.sendMail({
-        from: `"Proactive Notifications" <${fromAddress}>`,
+        from: `"PMS Notifications" <${fromAddress}>`,
         to: recipient.email,
-        subject: `[Proactive] ${payload.title}`,
+        subject: `[PMS] ${payload.title}`,
         html: emailHtml
       });
     } catch (error) {

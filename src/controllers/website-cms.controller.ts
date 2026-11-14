@@ -30,7 +30,7 @@ export const getPublicWebsiteConfig = asyncHandler(async (req: Request, res: Res
     // Default fallback branding
     return sendSuccess(res, 200, 'Website config resolved', {
       branding: {
-        firmName: 'Proactive Advisory & CA Practice',
+        firmName: 'PMS Advisory & CA Practice',
         logoUrl: '',
         faviconUrl: '',
         brandColor: '#2563eb'
@@ -41,7 +41,7 @@ export const getPublicWebsiteConfig = asyncHandler(async (req: Request, res: Res
         bannerImageUrl: ''
       },
       contact: {
-        email: 'support@proactive.local',
+        email: 'support@pms.local',
         phone: '+91 98765 43210',
         address: 'Practice Office, Tech City'
       },
@@ -73,7 +73,7 @@ export const getTenantWebsiteSettings = asyncHandler(async (req: Request, res: R
       tenantId: req.tenantId,
       subdomain: org?.name?.toLowerCase().replace(/[^a-z0-9]/g, '-') || 'firm',
       branding: {
-        firmName: org?.name || 'Proactive Advisory',
+        firmName: org?.name || 'PMS Advisory',
         brandColor: '#2563eb'
       },
       contact: {

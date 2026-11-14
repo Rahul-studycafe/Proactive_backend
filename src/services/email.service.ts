@@ -15,18 +15,18 @@ const transporter = nodemailer.createTransport({
 export const sendWelcomeEmail = async (toEmail: string, userName: string, orgName: string) => {
   try {
     const info = await transporter.sendMail({
-      from: `"Proactive App" <${process.env.SMTP_FROM || 'no-reply@proactiveapp.com'}>`,
+      from: `"PMS App" <${process.env.SMTP_FROM || process.env.EMAIL_USER || 'no-reply@pmsapp.in'}>`,
       to: toEmail,
-      subject: `Welcome to Proactive, ${userName}! Payment Successful.`,
+      subject: `Welcome to PMS, ${userName}! Payment Successful.`,
       html: `
         <div style="font-family: Arial, sans-serif; padding: 20px;">
-          <h2>Welcome to Proactive, ${userName}!</h2>
+          <h2>Welcome to PMS, ${userName}!</h2>
           <p>We are thrilled to let you know that the payment for your organization <strong>${orgName}</strong> was successful.</p>
-          <p>Your subscription is now active, and you can start adding users and utilizing all the features of Proactive.</p>
+          <p>Your subscription is now active, and you can start adding users and utilizing all the features of PMS.</p>
           <br/>
           <p>If you have any questions, feel free to reach out to our support team.</p>
           <p>Best regards,</p>
-          <p><strong>The Proactive Team</strong></p>
+          <p><strong>The PMS Team</strong></p>
         </div>
       `,
     });
@@ -45,7 +45,7 @@ export const sendDscExpiryEmail = async (
 ) => {
   try {
     const info = await transporter.sendMail({
-      from: `"Proactive Compliance Desk" <${process.env.SMTP_FROM || 'compliance@proactiveapp.com'}>`,
+      from: `"PMS Compliance Desk" <${process.env.SMTP_FROM || process.env.EMAIL_USER || 'compliance@pmsapp.in'}>`,
       to: toEmail,
       subject: `Urgent: Digital Signature Certificate (DSC) Expiry Notice for ${clientName}`,
       html: `
@@ -88,7 +88,7 @@ export const sendDocumentRequestEmail = async (
       .join('');
 
     const info = await transporter.sendMail({
-      from: `"${firmName}" <${process.env.SMTP_FROM || 'requests@proactiveapp.com'}>`,
+      from: `"${firmName}" <${process.env.SMTP_FROM || process.env.EMAIL_USER || 'requests@pmsapp.in'}>`,
       to: toEmail,
       subject: `Document Request: ${requestTitle} - ${firmName}`,
       html: `

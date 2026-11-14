@@ -19,7 +19,7 @@ const transporter = nodemailer.createTransport({
  */
 export const sendOtpEmail = async (to: string, otp: string): Promise<void> => {
   const mailOptions = {
-    from: `"Proactive" <${process.env.EMAIL_USER}>`,
+    from: `"PMS" <${process.env.EMAIL_USER}>`,
     to,
     subject: 'Your Verification Code',
     html: `
@@ -48,7 +48,7 @@ export const sendOtpEmail = async (to: string, otp: string): Promise<void> => {
  */
 export const sendPasswordResetEmail = async (to: string, resetLink: string): Promise<void> => {
   const mailOptions = {
-    from: `"Proactive" <${process.env.EMAIL_USER}>`,
+    from: `"PMS" <${process.env.EMAIL_USER}>`,
     to,
     subject: 'Reset Your Password',
     html: `
@@ -82,14 +82,14 @@ export const sendStaffInvitationEmail = async (
   inviterName: string
 ): Promise<void> => {
   const mailOptions = {
-    from: `"Proactive" <${process.env.EMAIL_USER}>`,
+    from: `"PMS" <${process.env.EMAIL_USER}>`,
     to,
-    subject: `You've been invited to join ${orgName} on Proactive`,
+    subject: `You've been invited to join ${orgName} on PMS`,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eaeaeb; border-radius: 8px;">
         <h2 style="color: #111; text-align: center;">You're Invited!</h2>
         <p style="color: #444; font-size: 16px;">
-          <strong>${inviterName}</strong> has invited you to join <strong>${orgName}</strong> on Proactive Practice Management System.
+          <strong>${inviterName}</strong> has invited you to join <strong>${orgName}</strong> on PMS Practice Management System.
         </p>
         <p style="color: #444; font-size: 16px;">
           Click the button below to accept your invitation and set up your password. This link is valid for 7 days.

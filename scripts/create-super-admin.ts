@@ -61,7 +61,7 @@ const createSuperAdmin = async () => {
     }
 
     // 3. Create the Super Admin User
-    const adminEmail = 'admin@proactive.com'; // You can change this
+    const adminEmail = 'admin@pmsapp.in'; // You can change this
     const adminPassword = 'SuperSecretPassword123!'; // You can change this
     
     let user = await User.findOne({ email: adminEmail }).setOptions({ skipTenantPlugin: true });

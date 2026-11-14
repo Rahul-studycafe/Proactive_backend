@@ -14,7 +14,7 @@ export const sendSuccess = (
     data,
     meta: {
       requestId,
-      service: 'Proactive-backend',
+      service: 'pms-backend',
       environment: process.env.NODE_ENV || 'development',
       timestamp: new Date().toISOString(),
     },
@@ -39,7 +39,7 @@ export const sendError = (
     },
     meta: {
       requestId,
-      service: 'Proactive-backend',
+      service: 'pms-backend',
       environment: process.env.NODE_ENV || 'development',
       timestamp: new Date().toISOString(),
     },

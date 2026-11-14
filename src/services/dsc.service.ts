@@ -479,7 +479,7 @@ export const scanDscExpiriesService = async (
             { stepName: 'Contact Client for Renewal Documents & Authorization', isCompleted: false },
             { stepName: 'Verify Mobile & Video Verification on Certifying Portal', isCompleted: false },
             { stepName: 'Download New Certificate into USB Hardware Token', isCompleted: false },
-            { stepName: 'Update Storage Location and Register Entry in Proactive', isCompleted: false }
+            { stepName: 'Update Storage Location and Register Entry in PMS', isCompleted: false }
           ],
           tags: ['Compliance', 'DSC Renewal', 'Phase 3'],
           billingAmount: 2500,

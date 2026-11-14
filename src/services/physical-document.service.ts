@@ -983,7 +983,7 @@ export const generateHandoverSlipService = async (
   }
 
   const organization = await Organization.findById(tenantId);
-  const orgName = organization?.name || 'Proactive Accounting Suite';
+  const orgName = organization?.name || 'PMS Accounting Suite';
   const orgAddress = organization?.address
     ? `${organization.address.addressLine1}, ${organization.address.city}, ${organization.address.state} - ${organization.address.pincode}`
     : '';
