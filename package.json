@@ -15,7 +15,10 @@
     "prepare": "husky install",
     "seed:promo": "ts-node-dev --transpile-only scripts/add-promocode.ts",
     "migrate:configs": "ts-node-dev --transpile-only scripts/migrate-tenant-configurations.ts",
-    "seed:sso-client": "ts-node-dev --transpile-only src/scripts/seed-sso-client.ts"
+    "seed:sso-client": "ts-node-dev --transpile-only src/scripts/seed-sso-client.ts",
+    "db:backup": "ts-node --transpile-only scripts/db-backup.ts",
+    "db:restore": "ts-node --transpile-only scripts/db-restore.ts",
+    "db:restore:latest": "ts-node --transpile-only scripts/db-restore.ts --latest"
   },
   "keywords": [],
   "author": "",
