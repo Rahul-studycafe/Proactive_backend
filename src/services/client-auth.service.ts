@@ -17,6 +17,48 @@ export interface ClientTokenPayload {
   tokenVersion: number;
 }
 
+export interface SelectionTokenPayload {
+  email?: string;
+  phone?: string;
+  allowedClientUserIds: string[];
+  purpose: 'firm_selection';
+}
+
+/**
+ * Generate a short-lived 10-minute token for choosing a practice workspace when a client belongs to multiple firms
+ */
+export const generateSelectionToken = (payload: { email?: string; phone?: string; allowedClientUserIds: string[] }): string => {
+  return jwt.sign(
+    {
+      ...payload,
+      purpose: 'firm_selection'
+    },
+    JWT_SECRET,
+    {
+      expiresIn: '10m'
+    }
+  );
+};
+
+/**
+ * Verify and decode firm selection token
+ */
+export const verifySelectionToken = (token: string): SelectionTokenPayload => {
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    if (decoded.purpose !== 'firm_selection' || !Array.isArray(decoded.allowedClientUserIds)) {
+      throw new ApiError(403, 'Invalid firm selection credential', 'INVALID_SELECTION_TOKEN');
+    }
+    return decoded as SelectionTokenPayload;
+  } catch (error: any) {
+    if (error instanceof ApiError) throw error;
+    if (error.name === 'TokenExpiredError') {
+      throw new ApiError(401, 'Workspace selection session expired. Please sign in again.', 'SELECTION_TOKEN_EXPIRED');
+    }
+    throw new ApiError(401, 'Invalid workspace selection token', 'INVALID_SELECTION_TOKEN');
+  }
+};
+
 /**
  * Generate a scoped 24h JWT token specifically for Client Portal access
  */
