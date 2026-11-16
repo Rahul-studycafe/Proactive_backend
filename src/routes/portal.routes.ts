@@ -8,7 +8,10 @@ import {
   portalVerifyOtp,
   portalSendMagicLink,
   portalVerifyMagicLink,
-  portalLogout
+  portalLogout,
+  portalSelectFirm,
+  portalSwitchFirm,
+  portalGetMyFirms
 } from '../controllers/portal-auth.controller';
 import { getPublicWebsiteConfig } from '../controllers/website-cms.controller';
 import {
@@ -72,10 +75,13 @@ router.post('/auth/request-otp', portalRequestOtp);
 router.post('/auth/verify-otp', portalVerifyOtp);
 router.post('/auth/send-magic-link', portalSendMagicLink);
 router.post('/auth/verify-magic-link', portalVerifyMagicLink);
+router.post('/auth/select-firm', portalSelectFirm);
 
 // ─── Protected Client Portal Routes ──────────────────────────────
 router.get('/profile', clientAuthenticate, getPortalProfile);
 router.put('/profile', clientAuthenticate, updatePortalProfile);
+router.get('/auth/my-firms', clientAuthenticate, portalGetMyFirms);
+router.post('/auth/switch-firm', clientAuthenticate, portalSwitchFirm);
 router.post('/auth/change-password', clientAuthenticate, changePortalPassword);
 router.post('/auth/logout', clientAuthenticate, portalLogout);
 
