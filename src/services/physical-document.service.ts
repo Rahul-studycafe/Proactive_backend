@@ -530,10 +530,20 @@ export const deletePhysicalDocumentService = async (
     throw new ApiError(400, 'Invalid document ID format', 'VALIDATION_ERROR');
   }
 
-  const result = await PhysicalDocumentModel.findOneAndDelete({ _id: id, tenantId });
-  if (!result) {
+  const doc = await PhysicalDocumentModel.findOne({ _id: id, tenantId });
+  if (!doc) {
     throw new ApiError(404, 'Physical document record not found', 'DOCUMENT_NOT_FOUND');
   }
+
+  if (doc.status !== 'Returned') {
+    throw new ApiError(
+      400,
+      `Cannot delete physical document record "${doc.documentName}": Document is currently in "${doc.status}" status. Physical documents must be formally acknowledged as returned to the client before the record can be deleted.`,
+      'DOCUMENT_STILL_IN_CUSTODY'
+    );
+  }
+
+  await PhysicalDocumentModel.findByIdAndDelete(doc._id);
 };
 
 /**

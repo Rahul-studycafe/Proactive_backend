@@ -41,6 +41,7 @@ export interface GetDscListQuery {
   status?: string;
   search?: string;
   expiringWithinDays?: number;
+  includeDeleted?: boolean;
   page?: number;
   limit?: number;
 }
@@ -141,6 +142,10 @@ export const getDscListService = async (
 
   const filter: any = { tenantId };
 
+  if (!query.includeDeleted) {
+    filter.isDeleted = { $ne: true };
+  }
+
   if (query.clientId) {
     filter.clientId = new mongoose.Types.ObjectId(query.clientId);
   }
@@ -198,7 +203,7 @@ export const getDscByIdService = async (
     throw new ApiError(400, 'Invalid DSC identifier', 'INVALID_ID');
   }
 
-  const dsc = await DSC.findOne({ _id: new mongoose.Types.ObjectId(id), tenantId })
+  const dsc = await DSC.findOne({ _id: new mongoose.Types.ObjectId(id), tenantId, isDeleted: { $ne: true } })
     .populate('clientId', 'name email mobile entityType')
     .populate('createdBy', 'name username email');
 
@@ -225,7 +230,7 @@ export const updateDscService = async (
     throw new ApiError(400, 'Invalid DSC identifier', 'INVALID_ID');
   }
 
-  const dsc = await DSC.findOne({ _id: new mongoose.Types.ObjectId(id), tenantId });
+  const dsc = await DSC.findOne({ _id: new mongoose.Types.ObjectId(id), tenantId, isDeleted: { $ne: true } });
   if (!dsc) {
     throw new ApiError(404, 'DSC token not found', 'DSC_NOT_FOUND');
   }
@@ -269,22 +274,31 @@ export const updateDscService = async (
 };
 
 /**
- * 5. Delete DSC entry
+ * 5. Soft-decommission DSC entry (preserves physical handover logs for compliance audits)
  */
 export const deleteDscService = async (
   tenantId: mongoose.Types.ObjectId,
-  id: string
+  id: string,
+  userId?: mongoose.Types.ObjectId
 ): Promise<boolean> => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
     throw new ApiError(400, 'Invalid DSC identifier', 'INVALID_ID');
   }
 
-  const dsc = await DSC.findOneAndDelete({ _id: new mongoose.Types.ObjectId(id), tenantId });
+  const dsc = await DSC.findOne({ _id: new mongoose.Types.ObjectId(id), tenantId, isDeleted: { $ne: true } });
   if (!dsc) {
     throw new ApiError(404, 'DSC token not found', 'DSC_NOT_FOUND');
   }
 
-  await DSCHandoverLog.deleteMany({ tenantId, dscId: dsc._id });
+  dsc.isDeleted = true;
+  dsc.status = 'Decommissioned';
+  dsc.deletedAt = new Date();
+  if (userId) {
+    dsc.deletedBy = userId;
+  }
+  await dsc.save();
+
+  // Preserve DSCHandoverLog for compliance audit trails - do NOT delete logs
   return true;
 };
 
@@ -395,8 +409,9 @@ export const scanDscExpiriesService = async (
     query.tenantId = tenantId;
   }
 
-  // Scan DSCs that are not already marked 'Renewed'
+  // Scan DSCs that are not already marked 'Renewed' and not deleted
   query.status = { $in: ['In Office', 'With Client', 'Expired'] };
+  query.isDeleted = { $ne: true };
 
   const dscs = await DSC.find(query).populate('clientId', 'name email mobile');
 
@@ -520,12 +535,13 @@ export const getDscSummaryKpiService = async (
   const thirtyDaysLater = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
   const [total, inOffice, withClient, expired, expiringIn30Days] = await Promise.all([
-    DSC.countDocuments({ tenantId }),
-    DSC.countDocuments({ tenantId, status: 'In Office' }),
-    DSC.countDocuments({ tenantId, status: 'With Client' }),
-    DSC.countDocuments({ tenantId, status: 'Expired' }),
+    DSC.countDocuments({ tenantId, isDeleted: { $ne: true } }),
+    DSC.countDocuments({ tenantId, status: 'In Office', isDeleted: { $ne: true } }),
+    DSC.countDocuments({ tenantId, status: 'With Client', isDeleted: { $ne: true } }),
+    DSC.countDocuments({ tenantId, status: 'Expired', isDeleted: { $ne: true } }),
     DSC.countDocuments({
       tenantId,
+      isDeleted: { $ne: true },
       status: { $in: ['In Office', 'With Client'] },
       expiryDate: { $gte: now, $lte: thirtyDaysLater }
     })

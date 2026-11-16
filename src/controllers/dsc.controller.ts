@@ -102,8 +102,8 @@ export const updateDsc = asyncHandler(async (req: Request, res: Response) => {
 
 export const deleteDsc = asyncHandler(async (req: Request, res: Response) => {
   const id = req.params.id as string;
-  await deleteDscService(req.tenantId!, id);
-  return sendSuccess(res, 200, 'DSC token removed successfully', { id });
+  await deleteDscService(req.tenantId!, id, req.user?._id);
+  return sendSuccess(res, 200, 'DSC token decommissioned successfully', { id });
 });
 
 export const logDscHandover = asyncHandler(async (req: Request, res: Response) => {

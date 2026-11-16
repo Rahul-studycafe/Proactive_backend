@@ -333,10 +333,25 @@ export class ExpenseService {
     }
 
     // Strict deletion guard
-    if (expense.isBilled) {
+    if (expense.isBilled || expense.invoiceId) {
       throw new ApiError(
         400,
-        `Cannot delete an expense that has already been billed on invoice ${expense.invoiceId || ''}`
+        `Cannot delete an expense that has already been billed on invoice #${expense.invoiceId || ''}`
+      );
+    }
+
+    const { Invoice } = await import('../models/Invoice');
+    const activeInvoice = await Invoice.findOne({
+      tenantId,
+      'items.referenceId': expense._id,
+      'items.referenceType': 'Expense',
+      status: { $ne: 'Cancelled' }
+    });
+
+    if (activeInvoice) {
+      throw new ApiError(
+        400,
+        `Cannot delete this expense: It is billed on active Invoice #${activeInvoice.invoiceNo || activeInvoice._id}. Please cancel or remove the expense from the invoice first.`
       );
     }
 

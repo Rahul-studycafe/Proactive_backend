@@ -4,7 +4,7 @@ import { tenantPlugin } from '../common/plugins/tenant.plugin';
 export const DSC_CLASSES = ['Class 2', 'Class 3'] as const;
 export const TOKEN_TYPES = ['ePass2003', 'ProxKey', 'mToken', 'Watchdata', 'Other'] as const;
 export const ISSUING_AUTHORITIES = ['eMudhra', 'Capricorn', 'Vsign', 'Sify', 'IDSign', 'Other'] as const;
-export const DSC_STATUSES = ['In Office', 'With Client', 'Expired', 'Renewed'] as const;
+export const DSC_STATUSES = ['In Office', 'With Client', 'Expired', 'Renewed', 'Decommissioned'] as const;
 
 export interface IDSC extends Document {
   tenantId: mongoose.Types.ObjectId;
@@ -17,10 +17,13 @@ export interface IDSC extends Document {
   issueDate: Date;
   expiryDate: Date;
   physicalLocation: string; // e.g. "Safe Box 1, Slot D-14"
-  status: 'In Office' | 'With Client' | 'Expired' | 'Renewed';
+  status: 'In Office' | 'With Client' | 'Expired' | 'Renewed' | 'Decommissioned';
   currentHolderName?: string; // If 'With Client' or out with staff
   alertMilestonesSent: ('30_day' | '15_day' | '7_day')[];
   notes?: string;
+  isDeleted?: boolean;
+  deletedAt?: Date;
+  deletedBy?: mongoose.Types.ObjectId;
   createdBy: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -98,6 +101,18 @@ const dscSchema = new Schema<IDSC>(
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: true
+    },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+      index: true
+    },
+    deletedAt: {
+      type: Date
+    },
+    deletedBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User'
     }
   },
   {
@@ -108,6 +123,7 @@ const dscSchema = new Schema<IDSC>(
 // Compound indexes for high-speed multi-tenant lookup and inventory filtration
 dscSchema.index({ tenantId: 1, clientId: 1, expiryDate: 1 });
 dscSchema.index({ tenantId: 1, status: 1 });
+dscSchema.index({ tenantId: 1, isDeleted: 1 });
 dscSchema.index({ tenantId: 1, certificateName: 'text', tokenSerialNumber: 'text' });
 
 dscSchema.plugin(tenantPlugin);

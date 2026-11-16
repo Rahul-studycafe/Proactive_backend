@@ -153,11 +153,37 @@ export const deleteBillingEntity = asyncHandler(async (req: Request, res: Respon
   }
 
   const { BillingEntity } = await import('../modules/masters/schemas');
-  const entity = await BillingEntity.findOneAndDelete({ _id: req.params.id, tenantId: req.tenantId });
+  const entity = await BillingEntity.findOne({ _id: req.params.id, tenantId: req.tenantId });
 
   if (!entity) {
     throw new ApiError(404, 'Billing entity not found');
   }
+
+  if (entity.isDefault) {
+    throw new ApiError(
+      400,
+      'Cannot delete the default billing entity. Please designate another entity as default first.',
+      'DEFAULT_ENTITY_IMMUTABLE'
+    );
+  }
+
+  const { Invoice } = await import('../models/Invoice');
+  const { Receipt } = await import('../models/Receipt');
+
+  const [invoiceCount, receiptCount] = await Promise.all([
+    Invoice.countDocuments({ tenantId: req.tenantId, billingEntityId: entity._id }),
+    Receipt.countDocuments({ tenantId: req.tenantId, billingEntityId: entity._id })
+  ]);
+
+  if (invoiceCount > 0 || receiptCount > 0) {
+    throw new ApiError(
+      400,
+      `Cannot delete billing entity '${entity.name}': It is linked to ${invoiceCount} invoice(s) and ${receiptCount} receipt(s). Disable the entity instead to preserve tax and accounting records.`,
+      'BILLING_ENTITY_HAS_TAX_HISTORY'
+    );
+  }
+
+  await BillingEntity.deleteOne({ _id: entity._id, tenantId: req.tenantId });
 
   return sendSuccess(res, 200, 'Billing entity deleted successfully', { id: req.params.id });
 });

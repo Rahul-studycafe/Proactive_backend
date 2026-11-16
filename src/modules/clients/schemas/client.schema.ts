@@ -41,6 +41,9 @@ export interface IClient extends Document {
   allowNotifications: boolean;
   allowLogin: boolean;
   isActive: boolean;
+  isDeleted?: boolean;
+  deletedAt?: Date;
+  deletedBy?: mongoose.Types.ObjectId;
   panVerified?: boolean;
   gstinVerified?: boolean;
   verifiedAt?: Date;
@@ -117,7 +120,12 @@ const clientSchema = new Schema<IClient>({
   allowLogin: { type: Boolean, default: false },
   
   // Status
-  isActive: { type: Boolean, default: true }
+  isActive: { type: Boolean, default: true },
+
+  // Soft-Delete & Auditing
+  isDeleted: { type: Boolean, default: false, index: true },
+  deletedAt: { type: Date },
+  deletedBy: { type: Schema.Types.ObjectId, ref: 'User' }
 }, { 
   timestamps: true,
   toJSON: { virtuals: true },
@@ -138,6 +146,7 @@ clientSchema.virtual('portalUsers', {
   foreignField: 'clientId'
 });
 
+clientSchema.index({ tenantId: 1, isDeleted: 1 });
 clientSchema.index({ tenantId: 1, name: 1 });
 clientSchema.index({ tenantId: 1, clientNumber: 1 });
 clientSchema.index({ tenantId: 1, fileNo: 1 });

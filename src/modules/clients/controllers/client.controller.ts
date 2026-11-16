@@ -3,6 +3,11 @@ import { asyncHandler } from '../../../utils/async-handler';
 import { sendSuccess } from '../../../common/responses/api-response';
 import { ApiError } from '../../../common/errors/api-error';
 import { Client } from '../schemas';
+import { Task } from '../../../models/Task';
+import { Invoice } from '../../../models/Invoice';
+import { PhysicalDocumentModel } from '../../../models/PhysicalDocument';
+import { DSC } from '../../../models/DSC';
+import { ClientUser } from '../../../models/ClientUser';
 import { z } from 'zod';
 import { triggerAutoDocumentRequestForService } from '../../../services/document-request.service';
 
@@ -57,6 +62,9 @@ export const getClients = asyncHandler(async (req: Request, res: Response) => {
   const isActive = req.query.isActive as string;
 
   let query: any = { tenantId: req.tenantId };
+  if (req.query.includeDeleted !== 'true') {
+    query.isDeleted = { $ne: true };
+  }
   
   if (search) {
     query.$or = [
@@ -163,13 +171,76 @@ export const updateClient = asyncHandler(async (req: Request, res: Response) => 
 });
 
 export const deleteClient = asyncHandler(async (req: Request, res: Response) => {
-  const client = await Client.findOneAndUpdate(
-    { _id: req.params.id, tenantId: req.tenantId },
-    { isActive: false },
-    { new: true }
-  );
+  const clientId = req.params.id as string;
+  const tenantId = req.tenantId;
+
+  const client = await Client.findOne({ _id: clientId, tenantId });
   if (!client) throw new ApiError(404, 'Client not found');
-  sendSuccess(res, 200, 'Client deleted successfully');
+
+  // Guard 1: Active uncompleted tasks check
+  const activeTasksCount = await Task.countDocuments({
+    tenantId,
+    clientId: client._id,
+    isDeleted: { $ne: true },
+    status: { $nin: ['Completed', 'Cancelled'] }
+  });
+
+  // Guard 2: Unpaid / Partially Paid invoices check
+  const unpaidInvoicesCount = await Invoice.countDocuments({
+    tenantId,
+    clientId: client._id,
+    status: { $in: ['Unpaid', 'Partially Paid'] }
+  });
+
+  // Guard 3: Physical Documents held in office custody
+  const unreturnedDocsCount = await PhysicalDocumentModel.countDocuments({
+    tenantId,
+    clientId: client._id,
+    status: { $ne: 'Returned' }
+  });
+
+  // Guard 4: Active DSC tokens
+  const activeDscCount = await DSC.countDocuments({
+    tenantId,
+    clientId: client._id,
+    isDeleted: { $ne: true },
+    status: { $ne: 'Decommissioned' }
+  });
+
+  const hasDependencies =
+    activeTasksCount > 0 ||
+    unpaidInvoicesCount > 0 ||
+    unreturnedDocsCount > 0 ||
+    activeDscCount > 0;
+
+  if (hasDependencies) {
+    const reasons: string[] = [];
+    if (activeTasksCount > 0) reasons.push(`${activeTasksCount} open task(s)`);
+    if (unpaidInvoicesCount > 0) reasons.push(`${unpaidInvoicesCount} unpaid/partially paid invoice(s)`);
+    if (unreturnedDocsCount > 0) reasons.push(`${unreturnedDocsCount} physical document(s) in office custody`);
+    if (activeDscCount > 0) reasons.push(`${activeDscCount} active DSC token(s)`);
+
+    throw new ApiError(
+      400,
+      `Cannot delete/deactivate '${client.name}': They currently have ${reasons.join(', ')}. Please complete or reassign tasks, settle invoices, and return documents before deleting this client.`,
+      'CLIENT_HAS_ACTIVE_DEPENDENCIES'
+    );
+  }
+
+  // Safe soft-delete
+  client.isActive = false;
+  client.isDeleted = true;
+  client.deletedAt = new Date();
+  client.deletedBy = (req as any).user?._id;
+  await client.save();
+
+  // Deactivate all client portal users for this client
+  await ClientUser.updateMany(
+    { clientId: client._id, tenantId },
+    { $set: { isActive: false } }
+  ).catch((err) => console.error('[deleteClient] Error deactivating client portal users:', err));
+
+  return sendSuccess(res, 200, 'Client archived successfully', { id: client._id, isDeleted: true });
 });
 
 export const uploadClientPhoto = asyncHandler(async (req: Request, res: Response) => {

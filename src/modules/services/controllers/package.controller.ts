@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { Package } from '../schemas/package.schema';
+import { Client } from '../../clients/schemas/client.schema';
 import { sendSuccess } from '../../../common/responses/api-response';
 import { asyncHandler } from '../../../utils/async-handler';
 import { ApiError } from '../../../common/errors/api-error';
@@ -66,14 +67,34 @@ export const updatePackage = asyncHandler(async (req: Request, res: Response) =>
 });
 
 export const deletePackage = asyncHandler(async (req: Request, res: Response) => {
-  const pkg = await Package.findOneAndDelete({ 
-    _id: req.params.id, 
-    tenantId: req.user!.tenantId 
+  const tenantId = req.user!.tenantId;
+  const packageId = req.params.id;
+
+  const pkg = await Package.findOne({ 
+    _id: packageId, 
+    tenantId 
   });
 
   if (!pkg) {
     throw new ApiError(404, 'Package not found');
   }
+
+  // Guard: Check if any active client is subscribed to this package
+  const subscribedClientsCount = await Client.countDocuments({
+    tenantId,
+    isDeleted: { $ne: true },
+    'subscribedPackages.packageId': pkg._id
+  });
+
+  if (subscribedClientsCount > 0) {
+    throw new ApiError(
+      400,
+      `Cannot delete package '${pkg.name}': ${subscribedClientsCount} client(s) are actively subscribed to it. Please unsubscribe these client(s) before deleting this package.`,
+      'PACKAGE_IN_USE'
+    );
+  }
+
+  await Package.deleteOne({ _id: pkg._id, tenantId });
 
   return sendSuccess(res, 200, 'Package deleted successfully');
 });
