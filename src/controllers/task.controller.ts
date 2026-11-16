@@ -5,6 +5,8 @@ import { ApiError } from '../utils/ApiError';
 import { Task, TASK_STATUSES } from '../models/Task';
 import { Service } from '../modules/services/schemas';
 import { TaskHistory } from '../models/TaskHistory';
+import { Invoice } from '../models/Invoice';
+import { DocumentModel } from '../models/Document';
 import { createDocumentRequestService } from '../services/document-request.service';
 import { notificationDispatcher } from '../services/notifications/notification-dispatcher.service';
 import { z } from 'zod';
@@ -255,6 +257,9 @@ export const getTasks = asyncHandler(async (req: Request, res: Response) => {
 
   // Build query
   const query: any = { tenantId: req.tenantId };
+  if (req.query.includeDeleted !== 'true') {
+    query.isDeleted = { $ne: true };
+  }
   
   if (req.query.status) query.status = req.query.status;
   if (req.query.priority) query.priority = req.query.priority;
@@ -324,7 +329,12 @@ export const getTasks = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const getTaskById = asyncHandler(async (req: Request, res: Response) => {
-  const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId })
+  const query: any = { _id: req.params.id, tenantId: req.tenantId };
+  if (req.query.includeDeleted !== 'true') {
+    query.isDeleted = { $ne: true };
+  }
+
+  const task = await Task.findOne(query)
     .populate('clientId', 'name clientNumber fileNo pan')
     .populate('serviceId', 'name customFieldsDef')
     .populate('assigneeIds', 'name photoUrl')
@@ -632,8 +642,78 @@ export const updateTaskStatus = asyncHandler(async (req: Request, res: Response)
 
 export const deleteTask = asyncHandler(async (req: Request, res: Response) => {
   const scopeFilter = (req as any).scopeFilter || {};
-  const task = await Task.findOneAndDelete({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter });
+  const task = await Task.findOne({ _id: req.params.id, tenantId: req.tenantId, ...scopeFilter });
   
   if (!task) throw new ApiError(404, 'Task not found');
-  sendSuccess(res, 200, 'Task deleted successfully');
+
+  // Guard 1: Invoice Dependency Check (Task billed on invoice)
+  if (task.isBilled || task.invoiceId) {
+    const linkedInvoice = await Invoice.findOne({
+      tenantId: req.tenantId,
+      $or: [
+        { _id: task.invoiceId },
+        { 'items.referenceId': task._id, 'items.referenceType': 'Task' }
+      ],
+      status: { $ne: 'Cancelled' }
+    });
+
+    if (linkedInvoice) {
+      throw new ApiError(
+        400,
+        `Cannot delete this task: It has been billed on Invoice #${linkedInvoice.invoiceNo || linkedInvoice._id}. Please cancel or detach the task from the invoice first.`,
+        'TASK_BILLED_ON_INVOICE'
+      );
+    }
+  }
+
+  // Also verify directly against invoices in case isBilled flag was desynced
+  const activeInvoice = await Invoice.findOne({
+    tenantId: req.tenantId,
+    'items.referenceId': task._id,
+    'items.referenceType': 'Task',
+    status: { $ne: 'Cancelled' }
+  });
+  if (activeInvoice) {
+    throw new ApiError(
+      400,
+      `Cannot delete this task: It is referenced on active Invoice #${activeInvoice.invoiceNo || activeInvoice._id}. Please cancel or adjust the invoice first.`,
+      'TASK_BILLED_ON_INVOICE'
+    );
+  }
+
+  // Check historical footprint
+  const docCount = await DocumentModel.countDocuments({ tenantId: req.tenantId, taskId: task._id });
+  const hasTimeLogs = (task.timeLogged || 0) > 0 || (task.timeLogs && task.timeLogs.length > 0);
+  const isCompleted = task.status === 'Completed';
+
+  // Hard Delete: ONLY allowed if permanent query flag is explicitly provided
+  // AND the task is a pure draft with zero documents, zero time logs, and was never completed or billed
+  if (req.query.permanent === 'true') {
+    if (docCount > 0 || hasTimeLogs || isCompleted) {
+      throw new ApiError(
+        400,
+        `Cannot permanently delete this task: It contains historical activity (${docCount} document(s), ${hasTimeLogs ? 'time logs' : ''}, ${isCompleted ? 'completed status' : ''}). It can only be archived / soft-deleted to maintain audit records.`,
+        'CANNOT_PERMANENTLY_DELETE_HISTORY'
+      );
+    }
+    await Task.deleteOne({ _id: task._id, tenantId: req.tenantId });
+    return sendSuccess(res, 200, 'Task permanently deleted', { id: task._id, permanent: true });
+  }
+
+  // Default: Soft Delete (Safe Archive)
+  task.isDeleted = true;
+  task.deletedAt = new Date();
+  task.deletedBy = (req as any).user?._id;
+  task.status = 'Cancelled';
+  await task.save();
+
+  await TaskHistory.create({
+    tenantId: req.tenantId,
+    taskId: task._id,
+    action: 'DELETED',
+    details: 'Task moved to trash (soft-deleted)',
+    createdBy: (req as any).user?._id
+  }).catch((err) => console.error('[deleteTask] TaskHistory create error:', err));
+
+  return sendSuccess(res, 200, 'Task moved to trash successfully', { id: task._id, isDeleted: true });
 });

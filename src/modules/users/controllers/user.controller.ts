@@ -11,6 +11,11 @@ import bcrypt from 'bcryptjs';
 
 import { PermissionResolverService } from '../../../services/permission-resolver.service';
 import { notificationDispatcher } from '../../../services/notifications/notification-dispatcher.service';
+import { getUserReplacementPreviewService } from '../../../services/user-replacement.service';
+import { Task } from '../../../models/Task';
+import { Invoice } from '../../../models/Invoice';
+import { DSC } from '../../../models/DSC';
+import mongoose from 'mongoose';
 
 const createUserSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -151,6 +156,9 @@ export const getUsers = asyncHandler(async (req: Request, res: Response) => {
   const search = req.query.search as string;
 
   const query: any = {};
+  if (req.query.includeDeleted !== 'true') {
+    query.isDeleted = { $ne: true };
+  }
   if (search) {
     query.$or = [
       { name: { $regex: search, $options: 'i' } },
@@ -334,9 +342,13 @@ export const updateUser = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const deleteUser = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const userId = req.params.id as string;
 
-  const user = await User.findById(id);
+  if (!req.tenantId) {
+    throw new ApiError(403, 'Tenant context missing', 'FORBIDDEN');
+  }
+
+  const user = await User.findById(userId);
   if (!user) {
     throw new ApiError(404, 'User not found', 'USER_NOT_FOUND');
   }
@@ -349,7 +361,102 @@ export const deleteUser = asyncHandler(async (req: Request, res: Response) => {
     throw new ApiError(400, 'You cannot delete your own account.', 'BAD_REQUEST');
   }
 
-  await User.findByIdAndDelete(id);
+  const userObjId = new mongoose.Types.ObjectId(userId);
+  const tenantObjId = new mongoose.Types.ObjectId(req.tenantId as any);
+
+  // Guard 1: Active Workload Guard (tasks, clients, services) via replacement preview service
+  const preview = await getUserReplacementPreviewService(tenantObjId, userId);
+  
+  // Guard 2: Reporting Manager Check
+  const managedStaffCount = await User.countDocuments({
+    tenantId: tenantObjId,
+    managerId: userObjId,
+    isActive: true,
+    isDeleted: { $ne: true }
+  });
+
+  // Guard 3: DSC Custody Check
+  const activeDscCount = await DSC.countDocuments({
+    tenantId: tenantObjId,
+    custodianUserId: userObjId
+  });
+
+  const hasActiveDependencies =
+    preview.activeTasksCount > 0 ||
+    preview.clientsCount > 0 ||
+    preview.servicesCount > 0 ||
+    managedStaffCount > 0 ||
+    activeDscCount > 0;
+
+  if (hasActiveDependencies) {
+    const reasons: string[] = [];
+    if (preview.activeTasksCount > 0) reasons.push(`${preview.activeTasksCount} active task(s)`);
+    if (preview.clientsCount > 0) reasons.push(`${preview.clientsCount} client(s)`);
+    if (preview.servicesCount > 0) reasons.push(`${preview.servicesCount} service subscription(s)`);
+    if (managedStaffCount > 0) reasons.push(`${managedStaffCount} reporting staff member(s)`);
+    if (activeDscCount > 0) reasons.push(`${activeDscCount} DSC token(s)`);
+
+    throw new ApiError(
+      400,
+      `Cannot delete '${user.name}': They are actively assigned to ${reasons.join(', ')}. Please reassign these responsibilities via the Staff Handover feature before removing this user.`,
+      'USER_HAS_ACTIVE_DEPENDENCIES'
+    );
+  }
+
+  // Check historical audit activity
+  const [historicalTasksCount, historicalInvoicesCount] = await Promise.all([
+    Task.countDocuments({
+      tenantId: tenantObjId,
+      $or: [
+        { assigneeIds: userObjId },
+        { 'subtasks.assignedUserId': userObjId },
+        { 'timeLogs.userId': userObjId },
+        { 'checklist.completedBy': userObjId }
+      ]
+    }),
+    Invoice.countDocuments({
+      tenantId: tenantObjId,
+      createdBy: userObjId
+    })
+  ]);
+
+  const hasHistoricalActivity = historicalTasksCount > 0 || historicalInvoicesCount > 0;
+
+  // Soft-Delete (Deactivate & Archive): Preserves historical names across tasks, audit trails and invoices
+  if (hasHistoricalActivity || req.query.permanent !== 'true') {
+    user.isActive = false;
+    user.isDeleted = true;
+    user.deletedAt = new Date();
+    user.deletedBy = (req as any).user?._id;
+    user.tokenVersion = (user.tokenVersion || 0) + 1; // Invalidate all active JWT sessions immediately
+    user.refreshToken = undefined;
+    await user.save();
+
+    PermissionResolverService.invalidateUser(user._id.toString());
+
+    // Dispatch security notification
+    notificationDispatcher.dispatch({
+      tenantId: user.tenantId,
+      recipients: [{ userId: user._id, email: user.email, name: user.name }],
+      eventKey: 'user:deactivated',
+      category: 'security',
+      priority: 'urgent',
+      isMandatory: true,
+      title: 'Security Alert: Account Deactivated',
+      message: `Your account in the organization has been deactivated.`,
+      actorId: (req as any).user?._id,
+      actorName: (req as any).user?.name
+    }).catch(err => console.error('[deleteUser] Notification error:', err));
+
+    return sendSuccess(res, 200, 'User deactivated and archived successfully. Historical records have been preserved.', {
+      id: user._id,
+      isDeleted: true
+    });
+  }
+
+  // Pure draft account with zero historical activity: Physical hard delete permitted
+  await User.findByIdAndDelete(userId);
+  PermissionResolverService.invalidateUser(userId);
 
   return sendSuccess(res, 200, 'User deleted successfully', null);
 });

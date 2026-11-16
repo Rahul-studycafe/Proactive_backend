@@ -20,6 +20,9 @@ export interface IUser extends Document {
   invitationToken?: string;
   invitationExpiresAt?: Date;
   isActive: boolean;
+  isDeleted?: boolean;
+  deletedAt?: Date;
+  deletedBy?: mongoose.Types.ObjectId;
   joiningDate?: Date;
   tokenVersion: number;
   refreshToken?: string;
@@ -60,13 +63,19 @@ const userSchema = new Schema<IUser>({
   tokenVersion: { type: Number, default: 0 },
   
   // Refresh token storage (hashed)
-  refreshToken: { type: String, select: false }
+  refreshToken: { type: String, select: false },
+
+  // Soft-Delete & Auditing
+  isDeleted: { type: Boolean, default: false, index: true },
+  deletedAt: { type: Date },
+  deletedBy: { type: Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });
 
 // Compound unique: username and email unique per tenant
 userSchema.index({ tenantId: 1, username: 1 }, { unique: true });
 userSchema.index({ tenantId: 1, email: 1 }, { unique: true, sparse: true });
 userSchema.index({ tenantId: 1, isActive: 1 });
+userSchema.index({ tenantId: 1, isDeleted: 1 });
 userSchema.index({ tenantId: 1, isOwner: 1 });
 
 // Role sync hook (keeps primary roleId and multi-role roleIds synchronized)

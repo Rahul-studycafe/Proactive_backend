@@ -50,6 +50,9 @@ export interface ITask extends Document {
     description?: string;
     loggedAt: Date;
   }[];
+  isDeleted?: boolean;
+  deletedAt?: Date;
+  deletedBy?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -121,10 +124,16 @@ const taskSchema = new Schema<ITask>({
     minutes: { type: Number },
     description: { type: String },
     loggedAt: { type: Date, default: Date.now }
-  }]
+  }],
+  
+  // Soft-Delete & Auditing
+  isDeleted: { type: Boolean, default: false, index: true },
+  deletedAt: { type: Date },
+  deletedBy: { type: Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });
 
 taskSchema.index({ tenantId: 1, status: 1 });
+taskSchema.index({ tenantId: 1, isDeleted: 1, status: 1 });
 taskSchema.index({ tenantId: 1, clientId: 1, status: 1 });
 taskSchema.index({ tenantId: 1, assignedUserId: 1, status: 1 });
 taskSchema.index({ tenantId: 1, isBilled: 1, status: 1 });
