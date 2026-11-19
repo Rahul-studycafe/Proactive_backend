@@ -25,6 +25,8 @@ export interface IOrganization extends Document {
     pincode: string;
   };
   isActive: boolean;
+  workspaceRenamedCount?: number;
+  workspaceRenamedAt?: Date;
   lastInvoiceNumber?: number;
   lastReceiptNumber?: number;
   lastCreditNoteNumber?: number;
@@ -64,6 +66,8 @@ const organizationSchema = new Schema<IOrganization>({
     pincode: { type: String }
   },
   isActive: { type: Boolean, default: true },
+  workspaceRenamedCount: { type: Number, default: 0 },
+  workspaceRenamedAt: { type: Date },
   lastInvoiceNumber: { type: Number, default: 0 },
   lastReceiptNumber: { type: Number, default: 0 },
   lastCreditNoteNumber: { type: Number, default: 0 },

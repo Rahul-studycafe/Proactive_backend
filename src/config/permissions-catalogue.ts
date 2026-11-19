@@ -143,27 +143,50 @@ export interface RoleBlueprint {
 }
 
 /**
- * Returns the four default seed blueprints for any tenant.
- * Admin, Accountant, and Staff are fully customizable by the Super Admin.
+ * Returns the default seed blueprints for any tenant.
+ * Includes the requested CA practice hierarchy roles:
+ * - Super Admin (unrestricted owner)
+ * - Senior Manager
+ * - Manager
+ * - Senior Associate
+ * - Associate
+ * - Qualified Chartered Accountant
+ * - Semi-Qualified CA
+ * - Article Assistant
+ * - Accountant
+ * - Office Administrator
+ * - HR Executive
+ * (and Admin / Staff for backward compatibility)
  */
 export function getDefaultRoleBlueprints(): RoleBlueprint[] {
-  // 1. Super Admin Blueprint (Unrestricted)
-  const superAdminPerms: Record<string, { allowed: boolean; scope: ScopeType }> = {};
-  PERMISSION_CATALOGUE.forEach((p) => {
-    superAdminPerms[p.id] = { allowed: true, scope: 'everything' };
-  });
+  // Helper to build permission record
+  const createPerms = (
+    fn: (p: PermissionDefinition) => { allowed: boolean; scope?: ScopeType }
+  ): Record<string, { allowed: boolean; scope: ScopeType }> => {
+    const map: Record<string, { allowed: boolean; scope: ScopeType }> = {};
+    PERMISSION_CATALOGUE.forEach((p) => {
+      const res = fn(p);
+      map[p.id] = {
+        allowed: res.allowed,
+        scope: res.scope || 'everything',
+      };
+    });
+    return map;
+  };
 
-  // 2. Admin Blueprint (Full Firm Manager - customizable)
-  const adminPerms: Record<string, { allowed: boolean; scope: ScopeType }> = {};
-  PERMISSION_CATALOGUE.forEach((p) => {
-    adminPerms[p.id] = { allowed: true, scope: 'everything' };
-  });
+  // 1. Super Admin (Unrestricted)
+  const superAdminPerms = createPerms(() => ({ allowed: true, scope: 'everything' }));
 
-  // 3. Accountant Blueprint (Clients, Invoices, Tasks, Receipts, Reports - customizable)
-  const accountantPerms: Record<string, { allowed: boolean; scope: ScopeType }> = {};
-  PERMISSION_CATALOGUE.forEach((p) => {
-    // Default allowed for accountant
-    const isAccountantAction =
+  // 2. Admin (Full Firm Manager)
+  const adminPerms = createPerms((p) => ({
+    allowed: !p.isDangerous || p.id === 'user:delete' ? false : !p.isDangerous,
+    scope: 'everything',
+  }));
+
+  // 3. Senior Manager (Executive practice manager overseeing clients, tasks, delegation, and billing)
+  const seniorManagerPerms = createPerms((p) => {
+    if (p.isDangerous) return { allowed: false, scope: 'everything' };
+    const allowed =
       p.resource === 'client' ||
       p.resource === 'task' ||
       p.resource === 'invoice' ||
@@ -171,39 +194,299 @@ export function getDefaultRoleBlueprints(): RoleBlueprint[] {
       p.resource === 'quotation' ||
       p.resource === 'receipt' ||
       p.resource === 'expense' ||
+      p.resource === 'service' ||
+      p.resource === 'package' ||
       p.resource === 'dsc' ||
+      p.resource === 'vault' ||
       p.resource === 'document' ||
       p.resource === 'configuration' ||
+      p.id === 'automation:run' ||
       p.id === 'report:view' ||
       p.id === 'report:export' ||
-      p.id === 'automation:run' ||
       p.id === 'attendance:view_self' ||
+      p.id === 'attendance:view_all' ||
       p.id === 'attendance:matrix_view_self' ||
-      p.id === 'attendance:export_payroll';
-
-    const isDelete = p.action === 'delete';
-    accountantPerms[p.id] = {
-      allowed: isAccountantAction && !isDelete,
-      scope: 'everything'
-    };
+      p.id === 'attendance:matrix_view' ||
+      p.id === 'attendance:manual_entry' ||
+      p.id === 'attendance:export_payroll' ||
+      p.id === 'user:view' ||
+      p.id === 'user:create' ||
+      p.id === 'user:edit' ||
+      p.id === 'role:view' ||
+      p.id === 'settings:view' ||
+      p.id === 'notification_settings:view';
+    return { allowed, scope: 'everything' };
   });
 
-  // 4. Staff Blueprint (View clients, execute assigned tasks only, view self attendance - customizable)
-  const staffPerms: Record<string, { allowed: boolean; scope: ScopeType }> = {};
-  PERMISSION_CATALOGUE.forEach((p) => {
-    if (p.id === 'client:view') {
-      staffPerms[p.id] = { allowed: true, scope: 'everything' };
-    } else if (p.id === 'task:view' || p.id === 'task:edit') {
-      staffPerms[p.id] = { allowed: true, scope: 'assigned_only' };
-    } else if (p.id === 'document:view' || p.id === 'document:create') {
-      staffPerms[p.id] = { allowed: true, scope: 'assigned_only' };
-    } else if (p.id === 'attendance:view_self' || p.id === 'attendance:matrix_view_self') {
-      staffPerms[p.id] = { allowed: true, scope: 'assigned_only' };
-    } else if (p.id === 'configuration:view' || p.id === 'configuration:create') {
-      staffPerms[p.id] = { allowed: true, scope: 'everything' };
-    } else {
-      staffPerms[p.id] = { allowed: false, scope: 'assigned_only' };
-    }
+  // 4. Manager (Engagement manager directing execution, assignments, compliance sign-offs)
+  const managerPerms = createPerms((p) => {
+    if (p.isDangerous) return { allowed: false, scope: 'everything' };
+    const allowed =
+      p.id === 'client:view' ||
+      p.id === 'client:create' ||
+      p.id === 'client:edit' ||
+      p.id === 'client:portal_manage' ||
+      p.id === 'client:services_manage' ||
+      p.id === 'client:packages_manage' ||
+      p.id === 'task:view' ||
+      p.id === 'task:create' ||
+      p.id === 'task:edit' ||
+      p.id === 'task:assign' ||
+      p.id === 'task:verify' ||
+      p.id === 'automation:run' ||
+      p.id === 'invoice:view' ||
+      p.id === 'invoice:create' ||
+      p.id === 'invoice:send' ||
+      p.id === 'credit_note:view' ||
+      p.id === 'quotation:view' ||
+      p.id === 'quotation:create' ||
+      p.id === 'quotation:send' ||
+      p.id === 'receipt:view' ||
+      p.id === 'receipt:create' ||
+      p.id === 'expense:view' ||
+      p.id === 'expense:create' ||
+      p.id === 'service:view' ||
+      p.id === 'package:view' ||
+      p.id === 'dsc:view' ||
+      p.id === 'dsc:create' ||
+      p.id === 'dsc:edit' ||
+      p.id === 'vault:view' ||
+      p.id === 'vault:create' ||
+      p.id === 'vault:edit' ||
+      p.id === 'document:view' ||
+      p.id === 'document:create' ||
+      p.id === 'document:request' ||
+      p.id === 'document:physical_manage' ||
+      p.id === 'attendance:view_self' ||
+      p.id === 'attendance:view_all' ||
+      p.id === 'attendance:matrix_view_self' ||
+      p.id === 'attendance:matrix_view' ||
+      p.id === 'report:view' ||
+      p.id === 'report:export' ||
+      p.id === 'user:view' ||
+      p.id === 'configuration:view' ||
+      p.id === 'settings:view';
+    return { allowed, scope: 'everything' };
+  });
+
+  // 5. Senior Associate (Experienced auditor/compliance practitioner)
+  const seniorAssociatePerms = createPerms((p) => {
+    if (p.isDangerous) return { allowed: false, scope: 'everything' };
+    if (p.id === 'client:view' || p.id === 'client:edit') return { allowed: true, scope: 'everything' };
+    if (p.id === 'task:view' || p.id === 'task:create' || p.id === 'task:edit' || p.id === 'task:verify') return { allowed: true, scope: 'everything' };
+    if (p.id === 'task:assign') return { allowed: true, scope: 'team_only' };
+    if (p.id === 'invoice:view' || p.id === 'invoice:create') return { allowed: true, scope: 'everything' };
+    if (p.id === 'quotation:view') return { allowed: true, scope: 'everything' };
+    if (p.id === 'receipt:view') return { allowed: true, scope: 'everything' };
+    if (p.id === 'expense:view' || p.id === 'expense:create') return { allowed: true, scope: 'everything' };
+    if (p.id === 'service:view' || p.id === 'package:view') return { allowed: true, scope: 'everything' };
+    if (p.id === 'dsc:view' || p.id === 'dsc:create' || p.id === 'dsc:edit') return { allowed: true, scope: 'everything' };
+    if (p.id === 'vault:view' || p.id === 'vault:create') return { allowed: true, scope: 'everything' };
+    if (p.id === 'document:view' || p.id === 'document:create' || p.id === 'document:request' || p.id === 'document:physical_manage') return { allowed: true, scope: 'everything' };
+    if (p.id === 'attendance:view_self' || p.id === 'attendance:matrix_view_self') return { allowed: true, scope: 'assigned_only' };
+    if (p.id === 'report:view' || p.id === 'configuration:view') return { allowed: true, scope: 'everything' };
+    return { allowed: false, scope: 'assigned_only' };
+  });
+
+  // 6. Associate (Core compliance execution)
+  const associatePerms = createPerms((p) => {
+    if (p.isDangerous) return { allowed: false, scope: 'assigned_only' };
+    if (p.id === 'client:view') return { allowed: true, scope: 'everything' };
+    if (p.id === 'task:view' || p.id === 'task:edit') return { allowed: true, scope: 'assigned_only' };
+    if (p.id === 'task:create') return { allowed: true, scope: 'everything' };
+    if (p.id === 'invoice:view') return { allowed: true, scope: 'assigned_only' };
+    if (p.id === 'receipt:view') return { allowed: true, scope: 'assigned_only' };
+    if (p.id === 'expense:view') return { allowed: true, scope: 'assigned_only' };
+    if (p.id === 'expense:create') return { allowed: true, scope: 'everything' };
+    if (p.id === 'service:view') return { allowed: true, scope: 'everything' };
+    if (p.id === 'dsc:view') return { allowed: true, scope: 'assigned_only' };
+    if (p.id === 'vault:view') return { allowed: true, scope: 'assigned_only' };
+    if (p.id === 'document:view' || p.id === 'document:create') return { allowed: true, scope: 'assigned_only' };
+    if (p.id === 'attendance:view_self' || p.id === 'attendance:matrix_view_self') return { allowed: true, scope: 'assigned_only' };
+    if (p.id === 'configuration:view') return { allowed: true, scope: 'everything' };
+    return { allowed: false, scope: 'assigned_only' };
+  });
+
+  // 7. Qualified Chartered Accountant (Certified CA for audit, tax, statutory representation & sign-offs)
+  const qualifiedCaPerms = createPerms((p) => {
+    if (p.isDangerous) return { allowed: false, scope: 'everything' };
+    const allowed =
+      p.id === 'client:view' ||
+      p.id === 'client:create' ||
+      p.id === 'client:edit' ||
+      p.id === 'client:services_manage' ||
+      p.id === 'client:packages_manage' ||
+      p.id === 'task:view' ||
+      p.id === 'task:create' ||
+      p.id === 'task:edit' ||
+      p.id === 'task:assign' ||
+      p.id === 'task:verify' ||
+      p.id === 'automation:run' ||
+      p.id === 'invoice:view' ||
+      p.id === 'invoice:create' ||
+      p.id === 'invoice:edit' ||
+      p.id === 'invoice:send' ||
+      p.id === 'credit_note:view' ||
+      p.id === 'credit_note:create' ||
+      p.id === 'quotation:view' ||
+      p.id === 'quotation:create' ||
+      p.id === 'receipt:view' ||
+      p.id === 'receipt:create' ||
+      p.id === 'expense:view' ||
+      p.id === 'expense:create' ||
+      p.id === 'expense:edit' ||
+      p.id === 'service:view' ||
+      p.id === 'package:view' ||
+      p.id === 'dsc:view' ||
+      p.id === 'dsc:create' ||
+      p.id === 'dsc:edit' ||
+      p.id === 'vault:view' ||
+      p.id === 'vault:create' ||
+      p.id === 'vault:edit' ||
+      p.id === 'document:view' ||
+      p.id === 'document:create' ||
+      p.id === 'document:request' ||
+      p.id === 'document:physical_manage' ||
+      p.id === 'attendance:view_self' ||
+      p.id === 'attendance:matrix_view_self' ||
+      p.id === 'attendance:view_all' ||
+      p.id === 'report:view' ||
+      p.id === 'report:export' ||
+      p.id === 'configuration:view' ||
+      p.id === 'settings:view';
+    return { allowed, scope: 'everything' };
+  });
+
+  // 8. Semi-Qualified CA (CA Inter/Finalist working on computations, TDS/GST and audits)
+  const semiQualifiedCaPerms = createPerms((p) => {
+    if (p.isDangerous) return { allowed: false, scope: 'everything' };
+    if (p.id === 'client:view') return { allowed: true, scope: 'everything' };
+    if (p.id === 'client:edit') return { allowed: true, scope: 'team_only' };
+    if (p.id === 'task:view' || p.id === 'task:create' || p.id === 'task:edit') return { allowed: true, scope: 'everything' };
+    if (p.id === 'invoice:view') return { allowed: true, scope: 'everything' };
+    if (p.id === 'receipt:view') return { allowed: true, scope: 'everything' };
+    if (p.id === 'expense:view' || p.id === 'expense:create') return { allowed: true, scope: 'everything' };
+    if (p.id === 'service:view') return { allowed: true, scope: 'everything' };
+    if (p.id === 'dsc:view' || p.id === 'dsc:create' || p.id === 'dsc:edit') return { allowed: true, scope: 'everything' };
+    if (p.id === 'vault:view') return { allowed: true, scope: 'everything' };
+    if (p.id === 'document:view' || p.id === 'document:create' || p.id === 'document:request') return { allowed: true, scope: 'everything' };
+    if (p.id === 'attendance:view_self' || p.id === 'attendance:matrix_view_self') return { allowed: true, scope: 'assigned_only' };
+    if (p.id === 'report:view' || p.id === 'configuration:view') return { allowed: true, scope: 'everything' };
+    return { allowed: false, scope: 'assigned_only' };
+  });
+
+  // 9. Article Assistant (ICAI Trainee executing field work and assigned compliance)
+  const articleAssistantPerms = createPerms((p) => {
+    if (p.id === 'client:view') return { allowed: true, scope: 'everything' };
+    if (p.id === 'task:view' || p.id === 'task:edit') return { allowed: true, scope: 'assigned_only' };
+    if (p.id === 'task:create') return { allowed: true, scope: 'assigned_only' };
+    if (p.id === 'dsc:view') return { allowed: true, scope: 'assigned_only' };
+    if (p.id === 'vault:view') return { allowed: true, scope: 'assigned_only' };
+    if (p.id === 'document:view' || p.id === 'document:create') return { allowed: true, scope: 'assigned_only' };
+    if (p.id === 'attendance:view_self' || p.id === 'attendance:matrix_view_self') return { allowed: true, scope: 'assigned_only' };
+    if (p.id === 'configuration:view') return { allowed: true, scope: 'everything' };
+    return { allowed: false, scope: 'assigned_only' };
+  });
+
+  // 10. Accountant (Client billing, invoices, receipts, outlays, collections)
+  const accountantPerms = createPerms((p) => {
+    if (p.isDangerous) return { allowed: false, scope: 'everything' };
+    const allowed =
+      p.id === 'client:view' ||
+      p.id === 'task:view' ||
+      p.id === 'task:create' ||
+      p.id === 'task:edit' ||
+      p.id === 'invoice:view' ||
+      p.id === 'invoice:create' ||
+      p.id === 'invoice:edit' ||
+      p.id === 'invoice:send' ||
+      p.id === 'credit_note:view' ||
+      p.id === 'credit_note:create' ||
+      p.id === 'quotation:view' ||
+      p.id === 'quotation:create' ||
+      p.id === 'quotation:edit' ||
+      p.id === 'quotation:send' ||
+      p.id === 'receipt:view' ||
+      p.id === 'receipt:create' ||
+      p.id === 'receipt:edit' ||
+      p.id === 'expense:view' ||
+      p.id === 'expense:create' ||
+      p.id === 'expense:edit' ||
+      p.id === 'dsc:view' ||
+      p.id === 'document:view' ||
+      p.id === 'document:create' ||
+      p.id === 'report:view' ||
+      p.id === 'report:export' ||
+      p.id === 'attendance:view_self' ||
+      p.id === 'attendance:matrix_view_self' ||
+      p.id === 'attendance:export_payroll' ||
+      p.id === 'configuration:view' ||
+      p.id === 'configuration:create';
+    return { allowed, scope: 'everything' };
+  });
+
+  // 11. Office Administrator (Front desk, physical document movement, DSC management, office attendance)
+  const officeAdminPerms = createPerms((p) => {
+    if (p.isDangerous) return { allowed: false, scope: 'everything' };
+    const allowed =
+      p.id === 'client:view' ||
+      p.id === 'client:create' ||
+      p.id === 'client:edit' ||
+      p.id === 'task:view' ||
+      p.id === 'task:create' ||
+      p.id === 'task:edit' ||
+      p.id === 'invoice:view' ||
+      p.id === 'receipt:view' ||
+      p.id === 'receipt:create' ||
+      p.id === 'expense:view' ||
+      p.id === 'expense:create' ||
+      p.id === 'dsc:view' ||
+      p.id === 'dsc:create' ||
+      p.id === 'dsc:edit' ||
+      p.id === 'document:view' ||
+      p.id === 'document:create' ||
+      p.id === 'document:request' ||
+      p.id === 'document:physical_manage' ||
+      p.id === 'attendance:view_self' ||
+      p.id === 'attendance:view_all' ||
+      p.id === 'attendance:matrix_view_self' ||
+      p.id === 'attendance:matrix_view' ||
+      p.id === 'attendance:manual_entry' ||
+      p.id === 'report:view' ||
+      p.id === 'configuration:view' ||
+      p.id === 'configuration:create' ||
+      p.id === 'configuration:update' ||
+      p.id === 'settings:view';
+    return { allowed, scope: 'everything' };
+  });
+
+  // 12. HR Executive (HR & Attendance desk, staff records, payroll export, attendance policy)
+  const hrExecutivePerms = createPerms((p) => {
+    if (p.isDangerous && p.id !== 'notification_settings:manage') return { allowed: false, scope: 'everything' };
+    const allowed =
+      p.id === 'client:view' ||
+      p.id === 'task:view' ||
+      p.resource === 'attendance' ||
+      p.id === 'user:view' ||
+      p.id === 'user:create' ||
+      p.id === 'user:edit' ||
+      p.id === 'report:view' ||
+      p.id === 'report:export' ||
+      p.id === 'configuration:view' ||
+      p.id === 'configuration:create' ||
+      p.id === 'configuration:update' ||
+      p.id === 'settings:view';
+    return { allowed, scope: 'everything' };
+  });
+
+  // 13. Staff (Legacy basic staff blueprint)
+  const staffPerms = createPerms((p) => {
+    if (p.id === 'client:view') return { allowed: true, scope: 'everything' };
+    if (p.id === 'task:view' || p.id === 'task:edit') return { allowed: true, scope: 'assigned_only' };
+    if (p.id === 'document:view' || p.id === 'document:create') return { allowed: true, scope: 'assigned_only' };
+    if (p.id === 'attendance:view_self' || p.id === 'attendance:matrix_view_self') return { allowed: true, scope: 'assigned_only' };
+    if (p.id === 'configuration:view' || p.id === 'configuration:create') return { allowed: true, scope: 'everything' };
+    return { allowed: false, scope: 'assigned_only' };
   });
 
   return [
@@ -215,18 +498,81 @@ export function getDefaultRoleBlueprints(): RoleBlueprint[] {
       permissions: superAdminPerms
     },
     {
+      name: 'Senior Manager',
+      description: 'Senior leadership overseeing firm-wide clients, tasks, staff delegation, and billing.',
+      isSuperAdmin: false,
+      isSystemDefault: true,
+      permissions: seniorManagerPerms
+    },
+    {
+      name: 'Manager',
+      description: 'Engagement manager directing execution, assignments, and compliance sign-offs.',
+      isSuperAdmin: false,
+      isSystemDefault: true,
+      permissions: managerPerms
+    },
+    {
+      name: 'Senior Associate',
+      description: 'Experienced associate conducting in-depth audits, tax returns, and task verification.',
+      isSuperAdmin: false,
+      isSystemDefault: true,
+      permissions: seniorAssociatePerms
+    },
+    {
+      name: 'Associate',
+      description: 'Core practice associate executing compliance filings, task checklists, and worksheets.',
+      isSuperAdmin: false,
+      isSystemDefault: true,
+      permissions: associatePerms
+    },
+    {
+      name: 'Qualified Chartered Accountant',
+      description: 'Certified CA managing statutory audits, direct & indirect taxation, and sign-offs.',
+      isSuperAdmin: false,
+      isSystemDefault: true,
+      permissions: qualifiedCaPerms
+    },
+    {
+      name: 'Semi-Qualified CA',
+      description: 'CA Intermediate/Finalist preparing computations, GST reconciliations, and audit papers.',
+      isSuperAdmin: false,
+      isSystemDefault: true,
+      permissions: semiQualifiedCaPerms
+    },
+    {
+      name: 'Article Assistant',
+      description: 'ICAI Trainee executing field audits, voucher checks, and assigned compliance tasks.',
+      isSuperAdmin: false,
+      isSystemDefault: true,
+      permissions: articleAssistantPerms
+    },
+    {
+      name: 'Accountant',
+      description: 'Accounting professional managing client billing, tax invoices, outlays, and receipts.',
+      isSuperAdmin: false,
+      isSystemDefault: true,
+      permissions: accountantPerms
+    },
+    {
+      name: 'Office Administrator',
+      description: 'Front-office coordinator managing physical documents, DSC tokens, and office presence.',
+      isSuperAdmin: false,
+      isSystemDefault: true,
+      permissions: officeAdminPerms
+    },
+    {
+      name: 'HR Executive',
+      description: 'Human resources specialist managing staff onboarding, attendance desk, and payroll.',
+      isSuperAdmin: false,
+      isSystemDefault: true,
+      permissions: hrExecutivePerms
+    },
+    {
       name: 'Admin',
       description: 'Firm Administrator with wide managerial and operational authority.',
       isSuperAdmin: false,
       isSystemDefault: true,
       permissions: adminPerms
-    },
-    {
-      name: 'Accountant',
-      description: 'Accounting professional managing client billing, filing tasks and receipts.',
-      isSuperAdmin: false,
-      isSystemDefault: true,
-      permissions: accountantPerms
     },
     {
       name: 'Staff',

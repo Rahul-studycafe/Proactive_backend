@@ -5,6 +5,7 @@ import { SsoClient, ISsoClient } from '../models/SsoClient';
 import { SsoTicket, ISsoTicket } from '../models/SsoTicket';
 import { PlatformUser, User, Organization } from '../modules/auth/schemas';
 import { Role } from '../modules/roles/schemas';
+import { RoleSeederService } from './role-seeder.service';
 import { BillingEntity, TenantSettings } from '../modules/masters/schemas';
 import { TenantConfigurationService } from './tenant-configuration.service';
 import { generateAccessToken, generateRefreshToken } from '../modules/auth/services/auth.service';
@@ -252,15 +253,8 @@ export class SsoService {
     });
     await organization.save();
 
-    // 3. Create Super Admin Role
-    const superAdminRole = new Role({
-      tenantId: organization._id,
-      name: 'Super Admin',
-      description: 'System generated super admin role',
-      isSuperAdmin: true,
-      permissions: {}
-    });
-    await superAdminRole.save();
+    // 3. Seed Default Roles (Super Admin + CA Practice Roles)
+    const { superAdminRole } = await RoleSeederService.seedDefaultRolesForTenant(organization._id);
 
     // 4. Create Anchor User Record
     const userRecord = new User({
@@ -463,8 +457,13 @@ export class SsoService {
 
   /**
    * Updates an organization's display name and regenerates slug.
+   * Can only be edited once in a lifetime by the Super Admin after initial setup.
    */
-  static async updateOrganizationName(tenantId: string | mongoose.Types.ObjectId, newName: string) {
+  static async updateOrganizationName(
+    tenantId: string | mongoose.Types.ObjectId,
+    newName: string,
+    isInitialSetup = false
+  ) {
     const trimmed = (newName || '').trim();
     if (!trimmed || trimmed.length < 2) {
       throw new ApiError(400, 'Organization name must be at least 2 characters long', 'VALIDATION_FAILED');
@@ -473,6 +472,18 @@ export class SsoService {
     const org = await Organization.findById(tenantId);
     if (!org) {
       throw new ApiError(404, 'Practice organization not found', 'ORG_NOT_FOUND');
+    }
+
+    if (!isInitialSetup) {
+      if ((org.workspaceRenamedCount || 0) >= 1) {
+        throw new ApiError(
+          403,
+          'Workspace name can only be edited once in a lifetime. Your one-time rename limit has already been reached.',
+          'WORKSPACE_RENAME_LIMIT_REACHED'
+        );
+      }
+      org.workspaceRenamedCount = (org.workspaceRenamedCount || 0) + 1;
+      org.workspaceRenamedAt = new Date();
     }
 
     const oldName = org.name;
@@ -497,7 +508,9 @@ export class SsoService {
       _id: org._id,
       name: org.name,
       slug: org.slug,
-      subscriptionStatus: org.subscriptionStatus
+      subscriptionStatus: org.subscriptionStatus,
+      workspaceRenamedCount: org.workspaceRenamedCount || 0,
+      canRenameWorkspace: (org.workspaceRenamedCount || 0) < 1
     };
   }
 }

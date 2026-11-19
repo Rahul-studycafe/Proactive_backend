@@ -21,3 +21,4 @@ async function checkIndexes() {
 }
 
 checkIndexes().catch(console.error);
+

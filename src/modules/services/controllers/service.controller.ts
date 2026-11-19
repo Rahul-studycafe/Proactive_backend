@@ -76,9 +76,19 @@ export const getServices = asyncHandler(async (req: Request, res: Response) => {
   const countMap = new Map();
   clientCounts.forEach(c => countMap.set(c._id.toString(), c.count));
 
+  const packageCounts = await Package.aggregate([
+    { $match: { tenantId: req.tenantId } },
+    { $unwind: '$serviceIds' },
+    { $group: { _id: '$serviceIds', count: { $sum: 1 } } }
+  ]);
+
+  const packageCountMap = new Map();
+  packageCounts.forEach(p => packageCountMap.set(p._id.toString(), p.count));
+
   const result = services.map(s => ({
     ...s,
-    clientsCount: countMap.get(s._id.toString()) || 0
+    clientsCount: countMap.get(s._id.toString()) || 0,
+    packagesCount: packageCountMap.get(s._id.toString()) || 0
   }));
 
   sendSuccess(res, 200, 'Success', result);
@@ -115,6 +125,12 @@ export const deleteService = asyncHandler(async (req: Request, res: Response) =>
 
   const { force } = req.query;
 
+  // Check if any package includes this service
+  const packagesWithService = await Package.find({
+    tenantId: req.tenantId,
+    serviceIds: service._id
+  }).select('name');
+
   // Check if any client is currently subscribed to this service
   const clientCount = await Client.countDocuments({
     tenantId: req.tenantId,
@@ -128,13 +144,25 @@ export const deleteService = asyncHandler(async (req: Request, res: Response) =>
   });
 
   if (force === 'true') {
-    // If forced, clean up client subscriptions and remove service
+    // If forced, clean up client subscriptions, detach from packages, and remove service
     await Client.updateMany(
       { tenantId: req.tenantId, 'subscribedServices.serviceId': service._id },
       { $pull: { subscribedServices: { serviceId: service._id } } }
     );
+    await Package.updateMany(
+      { tenantId: req.tenantId, serviceIds: service._id },
+      { $pull: { serviceIds: service._id } }
+    );
     await Service.deleteOne({ _id: service._id, tenantId: req.tenantId });
-    return sendSuccess(res, 200, 'Service deleted and removed from client subscriptions');
+    return sendSuccess(res, 200, 'Service deleted and removed from packages and client subscriptions');
+  }
+
+  if (packagesWithService.length > 0) {
+    const pkgNames = packagesWithService.map(p => `"${p.name}"`).join(', ');
+    throw new ApiError(
+      400,
+      `Cannot delete '${service.name}' because it is bundled inside ${packagesWithService.length} package(s): ${pkgNames}. Please remove this service from the package(s) or disable the service instead.`
+    );
   }
 
   if (clientCount > 0) {

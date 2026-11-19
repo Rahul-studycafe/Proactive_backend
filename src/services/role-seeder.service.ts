@@ -4,14 +4,18 @@ import { getDefaultRoleBlueprints } from '../config/permissions-catalogue';
 
 export class RoleSeederService {
   /**
-   * Seeds the 4 standard roles (Super Admin, Admin, Accountant, Staff) for a tenant if they do not exist.
-   * Admin, Accountant, and Staff can be customized by the tenant Super Admin.
+   * Seeds the default practice roles for a tenant if they do not exist:
+   * Super Admin, Senior Manager, Manager, Senior Associate, Associate,
+   * Qualified Chartered Accountant, Semi-Qualified CA, Article Assistant,
+   * Accountant, Office Administrator, HR Executive (plus Admin, Staff).
    */
   static async seedDefaultRolesForTenant(tenantId: mongoose.Types.ObjectId | string): Promise<{
     superAdminRole: IRole;
     adminRole: IRole;
     accountantRole: IRole;
     staffRole: IRole;
+    roles: Record<string, IRole>;
+    [key: string]: any;
   }> {
     const blueprints = getDefaultRoleBlueprints();
     const createdRoles: Record<string, IRole> = {};
@@ -60,9 +64,11 @@ export class RoleSeederService {
 
     return {
       superAdminRole: createdRoles['Super Admin'],
-      adminRole: createdRoles['Admin'],
+      adminRole: createdRoles['Admin'] || createdRoles['Senior Manager'],
       accountantRole: createdRoles['Accountant'],
-      staffRole: createdRoles['Staff']
+      staffRole: createdRoles['Staff'] || createdRoles['Associate'],
+      roles: createdRoles,
+      ...createdRoles
     };
   }
 }

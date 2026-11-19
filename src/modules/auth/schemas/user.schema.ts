@@ -9,8 +9,11 @@ export interface IUser extends Document {
   username: string;
   email?: string;
   mobile?: string;
+  phone?: string;
   password?: string;
   photoUrl?: string;
+  location?: string;
+  bio?: string;
   roleId: mongoose.Types.ObjectId;
   roleIds?: mongoose.Types.ObjectId[]; // Multi-role support
   isOwner: boolean;
@@ -41,10 +44,13 @@ const userSchema = new Schema<IUser>({
   username: { type: String, required: true, trim: true, lowercase: true },
   email: { type: String, trim: true, lowercase: true },
   mobile: { type: String, trim: true },
+  phone: { type: String, trim: true },
   password: { type: String, select: false },  // Optional for invited users until activation
   
   // Profile
   photoUrl: { type: String, default: '' },
+  location: { type: String, default: '', trim: true },
+  bio: { type: String, default: '', trim: true },
   
   // Access Control & Organization
   roleId: { type: Schema.Types.ObjectId, ref: 'Role', required: true },

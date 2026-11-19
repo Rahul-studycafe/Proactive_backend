@@ -4,6 +4,7 @@ import { asyncHandler } from '../utils/async-handler';
 import { sendSuccess } from '../common/responses/api-response';
 import { ApiError } from '../common/errors/api-error';
 import { SsoService } from '../services/sso.service';
+import { PermissionResolverService } from '../services/permission-resolver.service';
 
 const initiateTicketSchema = z.object({
   email: z.string().email('A valid email address is required'),
@@ -91,8 +92,27 @@ export const updateOrganizationHandler = asyncHandler(async (req: Request, res: 
     throw new ApiError(401, 'Tenant authentication required', 'UNAUTHORIZED');
   }
 
+  const user = req.user;
+  if (!user) {
+    throw new ApiError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const effectiveState = await PermissionResolverService.resolveUserPermissions(
+    user._id.toString(),
+    tenantId.toString()
+  );
+
+  const isSuperAdmin = user.isOwner || effectiveState.isSuperAdmin;
+  if (!isSuperAdmin) {
+    throw new ApiError(
+      403,
+      'Only the Super Admin or Practice Owner can edit the workspace name',
+      'FORBIDDEN'
+    );
+  }
+
   const updated = await SsoService.updateOrganizationName(tenantId, parsed.data.name);
 
-  return sendSuccess(res, 200, 'Organization name updated successfully', updated);
+  return sendSuccess(res, 200, 'Workspace name updated successfully', updated);
 });
 

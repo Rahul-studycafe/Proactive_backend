@@ -5,6 +5,10 @@ export interface IPlatformUser extends Document {
   name: string;
   email: string;
   mobile?: string;
+  phone?: string;
+  photoUrl?: string;
+  location?: string;
+  bio?: string;
   password?: string;
   isEmailVerified: boolean;
   emailVerifiedAt?: Date;
@@ -22,6 +26,10 @@ const platformUserSchema = new Schema<IPlatformUser>(
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
     mobile: { type: String, trim: true },
+    phone: { type: String, trim: true },
+    photoUrl: { type: String, default: '' },
+    location: { type: String, default: '', trim: true },
+    bio: { type: String, default: '', trim: true },
     password: { type: String, required: true, select: false },
     isEmailVerified: { type: Boolean, default: false },
     emailVerifiedAt: { type: Date },

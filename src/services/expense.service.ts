@@ -473,7 +473,7 @@ export class ExpenseService {
           monthlyTrends: [
             {
               $group: {
-                _id: { $dateToString: { format: '%Y-%m', date: '$date' } },
+                _id: { $dateToString: { format: '%Y-%m', date: { $toDate: '$date' } } },
                 totalAmount: { $sum: '$amount' },
                 billedAmount: {
                   $sum: { $cond: [{ $eq: ['$isBilled', true] }, '$amount', 0] }

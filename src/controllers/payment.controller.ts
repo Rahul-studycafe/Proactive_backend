@@ -6,6 +6,7 @@ import { PricingTier } from '../models/PricingTier';
 import { Organization, User, PlatformUser } from '../modules/auth/schemas';
 
 import { Role } from '../modules/roles/schemas';
+import { RoleSeederService } from '../services/role-seeder.service';
 import { BillingEntity } from '../modules/masters/schemas';
 import { TenantSettings } from '../modules/masters/schemas';
 import { TenantConfigurationService } from '../services/tenant-configuration.service';
@@ -146,15 +147,8 @@ export const verifyPayment = asyncHandler(async (req: Request, res: Response) =>
   });
   await organization.save();
 
-  // 3. Create Super Admin Role
-  const superAdminRole = new Role({
-    tenantId: organization._id,
-    name: 'Super Admin',
-    description: 'System generated super admin role',
-    isSuperAdmin: true,
-    permissions: {}
-  });
-  await superAdminRole.save();
+  // 3. Seed Default Roles (Super Admin + CA Practice Roles)
+  const { superAdminRole } = await RoleSeederService.seedDefaultRolesForTenant(organization._id);
 
   // 4. Create Anchor Tenant User for Owner
   const userRecord = new User({
@@ -305,15 +299,8 @@ export const handleRazorpayWebhook = asyncHandler(async (req: Request | any, res
     });
     await organization.save();
 
-    // 3. Create Super Admin Role
-    const superAdminRole = new Role({
-      tenantId: organization._id,
-      name: 'Super Admin',
-      description: 'System generated super admin role',
-      isSuperAdmin: true,
-      permissions: {}
-    });
-    await superAdminRole.save();
+    // 3. Seed Default Roles (Super Admin + CA Practice Roles)
+    const { superAdminRole } = await RoleSeederService.seedDefaultRolesForTenant(organization._id);
 
     // 4. Create Anchor Tenant User for Owner
     const userRecord = new User({

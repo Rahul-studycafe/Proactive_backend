@@ -52,7 +52,7 @@ async function fallbackMongooseRestore(uri: string, inputPath: string) {
   console.log('[Restore] Decompressing backup archive...');
   const compressedBuffer = fs.readFileSync(inputPath);
   const decompressedBuffer = zlib.gunzipSync(compressedBuffer);
-  const json = JSON.parse(decompressedBuffer.toString('utf-8'));
+  const json: any = mongoose.mongo.BSON.EJSON.parse(decompressedBuffer.toString('utf-8'));
 
   const conn = await mongoose.createConnection(uri).asPromise();
 
@@ -69,17 +69,7 @@ async function fallbackMongooseRestore(uri: string, inputPath: string) {
       await col.deleteMany({});
 
       if (docs && docs.length > 0) {
-        // Deserialize dates and ObjectIds if needed
-        const processedDocs = docs.map((doc) => {
-          for (const key of Object.keys(doc)) {
-            if (key === '_id' && doc[key] && typeof doc[key] === 'string' && /^[0-9a-fA-F]{24}$/.test(doc[key])) {
-              doc[key] = new mongoose.Types.ObjectId(doc[key]);
-            }
-          }
-          return doc;
-        });
-
-        await col.insertMany(processedDocs, { ordered: false });
+        await col.insertMany(docs, { ordered: false });
       }
       console.log(`  âžœ Restored ${colName}: ${docs.length} document(s)`);
     }

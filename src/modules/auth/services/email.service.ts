@@ -42,6 +42,58 @@ export const sendOtpEmail = async (to: string, otp: string): Promise<void> => {
 };
 
 /**
+ * Sends a dual-verification OTP email for changing the Super Admin email address.
+ * @param to The destination email (current or new)
+ * @param otp The 6-digit OTP code
+ * @param target Whether this is for the 'current' or 'new' email
+ * @param otherEmail The counterpart email address
+ */
+export const sendEmailChangeOtpEmail = async (
+  to: string,
+  otp: string,
+  target: 'current' | 'new',
+  otherEmail: string
+): Promise<void> => {
+  const isCurrent = target === 'current';
+  const subject = isCurrent
+    ? 'Security Alert: Approval Code to Change Super Admin Email'
+    : 'Verification Code: Confirm Your New Super Admin Email';
+
+  const heading = isCurrent
+    ? 'Approve Super Admin Email Change'
+    : 'Confirm Your New Email Address';
+
+  const bodyText = isCurrent
+    ? `A request was received to change your Super Admin primary email address from <strong>${to}</strong> to <strong>${otherEmail}</strong>. To approve this security-sensitive change, enter this approval code:`
+    : `You requested to set <strong>${to}</strong> as the new primary email for your Super Admin account. To verify that you own and have access to this inbox, enter this verification code:`;
+
+  const mailOptions = {
+    from: `"PMS Security" <${process.env.EMAIL_USER}>`,
+    to,
+    subject,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #eaeaeb; border-radius: 8px;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h2 style="color: #111; margin: 0; font-size: 20px;">${heading}</h2>
+          <p style="color: #6b7280; font-size: 13px; margin-top: 4px;">Two-Way Security Verification</p>
+        </div>
+        <p style="color: #374151; font-size: 15px; line-height: 1.5;">
+          ${bodyText}
+        </p>
+        <div style="background-color: #f3f4f6; padding: 18px; border-radius: 8px; text-align: center; margin: 24px 0; border: 1px dashed #d1d5db;">
+          <span style="font-size: 30px; font-weight: bold; letter-spacing: 6px; color: #111827; font-family: monospace;">${otp}</span>
+        </div>
+        <p style="color: #b91c1c; font-size: 12px; font-weight: 500; margin-bottom: 0;">
+          ⚠️ This code expires in 10 minutes. If you did not initiate this email change, please secure your account immediately.
+        </p>
+      </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
+/**
  * Sends a password reset link to the user.
  * @param to The recipient email address
  * @param resetLink The full URL for resetting the password

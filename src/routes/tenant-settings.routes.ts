@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../middlewares/authenticate';
+import { uploadLogoMiddleware } from '../middlewares/upload';
 import {
   getWorkingDays,
   updateWorkingDays,
@@ -8,6 +9,7 @@ import {
   createBillingEntity,
   updateBillingEntity,
   deleteBillingEntity,
+  uploadBillingEntityLogo,
   getTenantUsage,
   getTenantSubscription,
   upsertTenantSubscription
@@ -28,6 +30,7 @@ router.get('/my-ip', getMyIp);
 // Phase 119 & 141: Multi-Branch & Billing Entity Management
 router.get('/billing-entities', getBillingEntities);
 router.post('/billing-entities', createBillingEntity);
+router.post('/billing-entities/upload-logo', uploadLogoMiddleware.single('logo'), uploadBillingEntityLogo);
 router.put('/billing-entities/:id', updateBillingEntity);
 router.delete('/billing-entities/:id', deleteBillingEntity);
 

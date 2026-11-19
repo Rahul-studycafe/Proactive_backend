@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createUser, getUsers, getUserById, updateUser, replaceUser, getUserReplacementPreview, deleteUser } from '../modules/users/controllers/user.controller';
+import { createUser, resendStaffInvitation, getUsers, getUserById, updateUser, replaceUser, getUserReplacementPreview, deleteUser } from '../modules/users/controllers/user.controller';
 import { authenticate } from '../middlewares/authenticate';
 import { authorize } from '../middlewares/authorize';
 import { checkSeatLimit } from '../middlewares/plan-guard';
@@ -21,6 +21,9 @@ router.get('/:id', authorize(['user:view', 'task:assign', 'task:create', 'task:e
 
 // Create a new user (requires 'user.create' permission and within SaaS seat quota)
 router.post('/', authorize('user', 'create'), checkSeatLimit, createUser);
+
+// Resend staff invitation email with a fresh 7-day token
+router.post('/:id/resend-invite', authorize(['user:create', 'user:edit', 'settings:manage']), resendStaffInvitation);
 
 // Update user (requires 'user.edit' permission)
 router.put('/:id', authorize('user', 'edit'), updateUser);

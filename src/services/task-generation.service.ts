@@ -45,12 +45,13 @@ export const generateTaskForClientService = async (
   customBillingAmount?: number
 ): Promise<TaskGenerationResult> => {
   try {
-    // 1. Idempotency Check: strictly guarantee no duplicate task for same (tenantId, clientId, serviceId, period)
+    // 1. Idempotency Check: strictly guarantee no duplicate active task for same (tenantId, clientId, serviceId, period)
     const existingTask = await Task.findOne({
       tenantId,
       clientId,
       serviceId,
-      'period.label': periodStr
+      'period.label': periodStr,
+      isDeleted: { $ne: true }
     });
 
     if (existingTask) {
@@ -114,8 +115,15 @@ export const generateTaskForClientService = async (
     }
 
     // 7. Calculate Due Date & Subtasks
+    const isOneTime = !service.isRecurring || service.frequency?.type === 'one_time';
     const dueDay = service.frequency?.dueDay || 20;
-    const dueDate = calculateDueDate(dueDay, referenceDate, 0);
+    const dueMonthOffset = Number(service.frequency?.dueMonthOffset) || 0;
+    let dueDate = calculateDueDate(dueDay, referenceDate, dueMonthOffset);
+    if (isOneTime && dueDate < referenceDate) {
+      const d = new Date(referenceDate);
+      d.setDate(d.getDate() + 7);
+      dueDate = d;
+    }
 
     const calculatedSubtasks = (service.subtasks || []).map((st: any) => {
       let stDueDate = undefined;
@@ -144,7 +152,9 @@ export const generateTaskForClientService = async (
     });
 
     const billingAmount =
-      customBillingAmount !== undefined
+      customBillingAmount !== undefined &&
+      customBillingAmount !== null &&
+      customBillingAmount > 0
         ? customBillingAmount
         : service.defaultBillingRate || 0;
 
@@ -243,7 +253,8 @@ export const scanAndGenerateRecurringTasks = async (
     // 2. Query active clients with subscribed services or packages
     const clientQuery: any = {
       tenantId: tid,
-      isActive: true,
+      isDeleted: { $ne: true },
+      isActive: { $ne: false },
       $or: [
         { 'subscribedServices.0': { $exists: true } },
         { 'subscribedPackages.0': { $exists: true } }
@@ -263,7 +274,7 @@ export const scanAndGenerateRecurringTasks = async (
     packages.forEach((pkg) => packageMap.set(pkg._id.toString(), pkg));
 
     // Cache services in tenant
-    const services = await Service.find({ tenantId: tid, isEnabled: true });
+    const services = await Service.find({ tenantId: tid, isEnabled: { $ne: false } });
     const serviceMap = new Map<string, IService>();
     services.forEach((s) => serviceMap.set(s._id.toString(), s));
 
@@ -280,10 +291,16 @@ export const scanAndGenerateRecurringTasks = async (
       // Direct subscriptions
       if (client.subscribedServices) {
         client.subscribedServices.forEach((sub) => {
+          const effectivePrice =
+            sub.customPrice !== undefined &&
+            sub.customPrice !== null &&
+            sub.customPrice > 0
+              ? sub.customPrice
+              : undefined;
           targetsMap.set(sub.serviceId.toString(), {
             serviceId: sub.serviceId,
             customUsers: sub.customUsers,
-            customPrice: sub.customPrice
+            customPrice: effectivePrice
           });
         });
       }
@@ -315,9 +332,11 @@ export const scanAndGenerateRecurringTasks = async (
         if (!service) continue;
 
         // Verify if task should spawn today
+        const isOneTime = !service.isRecurring || service.frequency?.type === 'one_time';
         const freqType = service.frequency?.type || 'monthly';
-        const offset: PeriodOffset =
-          (service.frequency?.creationMonthOffset as PeriodOffset) || 'previous';
+        const offset: PeriodOffset = isOneTime
+          ? 'current'
+          : (service.frequency?.creationMonthOffset as PeriodOffset) || 'previous';
 
         if (!options.forceAll) {
           const isSpawnDay = shouldSpawnToday(service.frequency, refDate);

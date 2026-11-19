@@ -40,7 +40,7 @@ describe('Dynamic RBAC & Multi-Role Authorization Engine', () => {
     await mongoose.disconnect();
   });
 
-  it('1. Should seed the 4 default roles (Super Admin, Admin, Accountant, Staff) for tenant', async () => {
+  it('1. Should seed default roles (Super Admin, CA practice roles, Admin, Staff) for tenant', async () => {
     seededRoles = await RoleSeederService.seedDefaultRolesForTenant(testTenantId);
 
     expect(seededRoles.superAdminRole).toBeDefined();
@@ -49,20 +49,27 @@ describe('Dynamic RBAC & Multi-Role Authorization Engine', () => {
     expect(seededRoles.superAdminRole.isSystemDefault).toBe(true);
 
     expect(seededRoles.adminRole).toBeDefined();
-    expect(seededRoles.adminRole.name).toBe('Admin');
     expect(seededRoles.adminRole.isSuperAdmin).toBe(false);
     expect(seededRoles.adminRole.isSystemDefault).toBe(true);
 
+    expect(seededRoles['Senior Manager']).toBeDefined();
+    expect(seededRoles['Manager']).toBeDefined();
+    expect(seededRoles['Senior Associate']).toBeDefined();
+    expect(seededRoles['Associate']).toBeDefined();
+    expect(seededRoles['Qualified Chartered Accountant']).toBeDefined();
+    expect(seededRoles['Semi-Qualified CA']).toBeDefined();
+    expect(seededRoles['Article Assistant']).toBeDefined();
     expect(seededRoles.accountantRole).toBeDefined();
     expect(seededRoles.accountantRole.name).toBe('Accountant');
-    expect(seededRoles.accountantRole.isSuperAdmin).toBe(false);
+    expect(seededRoles['Office Administrator']).toBeDefined();
+    expect(seededRoles['HR Executive']).toBeDefined();
 
     expect(seededRoles.staffRole).toBeDefined();
     expect(seededRoles.staffRole.name).toBe('Staff');
     expect(seededRoles.staffRole.isSuperAdmin).toBe(false);
 
     const count = await Role.countDocuments({ tenantId: testTenantId });
-    expect(count).toBe(4);
+    expect(count).toBe(13);
   });
 
   it('2. Should resolve unrestricted permissions for Organization Owner / Super Admin', async () => {

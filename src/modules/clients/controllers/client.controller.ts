@@ -10,6 +10,7 @@ import { DSC } from '../../../models/DSC';
 import { ClientUser } from '../../../models/ClientUser';
 import { z } from 'zod';
 import { triggerAutoDocumentRequestForService } from '../../../services/document-request.service';
+import { scanAndGenerateRecurringTasks } from '../../../services/task-generation.service';
 
 const clientSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -105,28 +106,64 @@ export const getClientById = asyncHandler(async (req: Request, res: Response) =>
   const client = await Client.findOne({ _id: req.params.id, tenantId: req.tenantId })
     .populate('groupId', 'name')
     .populate('assignedUsers', 'name photoUrl')
-    .populate('subscribedServices.serviceId', 'name isRecurring frequency')
+    .populate('subscribedServices.serviceId', 'name isRecurring frequency defaultBillingRate isBillable')
     .populate('subscribedServices.customUsers', 'name photoUrl')
     .populate({
       path: 'subscribedPackages.packageId',
       select: 'name frequency defaultBillingAmount sacCode gstPercentage serviceIds',
       populate: {
         path: 'serviceIds',
-        select: 'name frequency isRecurring'
+        select: 'name frequency isRecurring defaultBillingRate isBillable'
       }
     })
     .populate({
       path: 'tasks',
+      match: { isDeleted: { $ne: true } },
       select: 'serviceId status priority dueDate targetDate period isBillable billableAmount billingAmount assigneeIds description',
       populate: {
         path: 'serviceId',
-        select: 'name'
+        select: 'name defaultBillingRate isBillable'
       }
     });
 
   if (!client) throw new ApiError(404, 'Client not found');
 
-  sendSuccess(res, 200, 'Success', client);
+  const clientObj = client.toObject();
+
+  // Prune any dangling/orphaned service subscriptions where the service was deleted
+  const hadOrphans = (clientObj.subscribedServices || []).some((sub: any) => !sub.serviceId);
+  if (hadOrphans) {
+    clientObj.subscribedServices = (clientObj.subscribedServices || []).filter(
+      (sub: any) => sub.serviceId != null
+    );
+
+    // Auto-heal the database document so orphaned ObjectIds are pruned permanently
+    const validRawSubscribedServices = clientObj.subscribedServices.map((sub: any) => ({
+      serviceId: sub.serviceId._id || sub.serviceId,
+      customPrice: sub.customPrice,
+      customUsers: sub.customUsers,
+      subscribedAt: sub.subscribedAt
+    }));
+
+    await Client.updateOne(
+      { _id: client._id, tenantId: req.tenantId },
+      { $set: { subscribedServices: validRawSubscribedServices } }
+    ).catch(err => console.error('Failed to auto-heal orphaned subscribedServices:', err));
+  }
+
+  // Also sanitize subscribedPackages if any package was deleted or serviceIds inside package were deleted
+  if (clientObj.subscribedPackages) {
+    clientObj.subscribedPackages = clientObj.subscribedPackages
+      .filter((pkgSub: any) => pkgSub.packageId != null)
+      .map((pkgSub: any) => {
+        if (pkgSub.packageId && Array.isArray(pkgSub.packageId.serviceIds)) {
+          pkgSub.packageId.serviceIds = pkgSub.packageId.serviceIds.filter(Boolean);
+        }
+        return pkgSub;
+      });
+  }
+
+  sendSuccess(res, 200, 'Success', clientObj);
 });
 
 export const createClient = asyncHandler(async (req: Request, res: Response) => {
@@ -147,6 +184,24 @@ export const createClient = asyncHandler(async (req: Request, res: Response) => 
         sub.serviceId,
         req.user?._id
       ).catch(err => console.error('[createClient] Auto doc request error:', err));
+    }
+  }
+
+  // Automatically generate tasks immediately for initial subscribed services / packages
+  if (
+    (client.subscribedServices && client.subscribedServices.length > 0) ||
+    (client.subscribedPackages && client.subscribedPackages.length > 0)
+  ) {
+    try {
+      await scanAndGenerateRecurringTasks({
+        tenantId: req.tenantId,
+        clientId: client._id,
+        forceAll: true,
+        runType: 'Manual',
+        triggeredBy: req.user?._id
+      });
+    } catch (err) {
+      console.error('[createClient] Auto task generation error:', err);
     }
   }
 
@@ -294,22 +349,37 @@ export const subscribeToPackage = asyncHandler(async (req: Request, res: Respons
     subscribedAt: new Date()
   });
 
-  // Also push all services from the package into subscribedServices if not already there
+  // Validate that package contains active services
+  const Service = require('mongoose').model('Service');
+  const validServices = await Service.find({
+    _id: { $in: pkg.serviceIds },
+    tenantId: req.tenantId,
+    isEnabled: true
+  }).select('_id name');
+
+  if (validServices.length === 0) {
+    throw new ApiError(400, `Cannot subscribe to package '${pkg.name}' because it contains no active or valid services.`);
+  }
+
+  // Also push all valid active services from the package into subscribedServices if not already there
   if (!client.subscribedServices) {
     client.subscribedServices = [];
   }
 
-  const existingServiceIds = client.subscribedServices.map(s => ((s.serviceId as any)?._id || s.serviceId).toString());
+  const existingServiceIds = client.subscribedServices
+    .filter(s => s.serviceId)
+    .map(s => ((s.serviceId as any)?._id || s.serviceId).toString());
   
   const newServiceIds: any[] = [];
-  for (const sId of pkg.serviceIds) {
-    if (!existingServiceIds.includes(sId.toString())) {
+  for (const svc of validServices) {
+    const sIdStr = svc._id.toString();
+    if (!existingServiceIds.includes(sIdStr)) {
       client.subscribedServices.push({
-        serviceId: sId,
+        serviceId: svc._id,
         customUsers: [],
         subscribedAt: new Date()
       });
-      newServiceIds.push(sId);
+      newServiceIds.push(svc._id);
     }
   }
 
@@ -325,13 +395,29 @@ export const subscribeToPackage = asyncHandler(async (req: Request, res: Respons
     ).catch(err => console.error('[subscribeToPackage] Auto doc request error:', err));
   }
 
+  // Automatically generate tasks immediately for newly subscribed services in package
+  for (const sId of newServiceIds) {
+    try {
+      await scanAndGenerateRecurringTasks({
+        tenantId: req.tenantId,
+        clientId: client._id,
+        serviceId: sId,
+        forceAll: true,
+        runType: 'Manual',
+        triggeredBy: req.user?._id
+      });
+    } catch (err) {
+      console.error('[subscribeToPackage] Auto task generation error for service:', sId, err);
+    }
+  }
+
   return sendSuccess(res, 200, 'Subscribed to package successfully', client);
 });
 
 export const subscribeToService = asyncHandler(async (req: Request, res: Response) => {
   const { serviceId, customPrice } = z.object({
     serviceId: z.string(),
-    customPrice: z.number().optional()
+    customPrice: z.number().optional().nullable()
   }).parse(req.body);
 
   const Service = require('mongoose').model('Service');
@@ -345,13 +431,19 @@ export const subscribeToService = asyncHandler(async (req: Request, res: Respons
     throw new ApiError(404, 'Client not found');
   }
 
+  // Resolve effective custom price: only store customPrice if explicitly specified and > 0
+  const effectiveCustomPrice =
+    customPrice !== undefined && customPrice !== null && customPrice > 0
+      ? customPrice
+      : undefined;
+
   // Check if already subscribed to this service
   const existingSvcIndex = client.subscribedServices?.findIndex(
     s => ((s.serviceId as any)?._id || s.serviceId).toString() === serviceId
   );
   if (existingSvcIndex !== undefined && existingSvcIndex >= 0) {
     if (customPrice !== undefined) {
-      client.subscribedServices[existingSvcIndex].customPrice = customPrice;
+      client.subscribedServices[existingSvcIndex].customPrice = effectiveCustomPrice;
       await client.save();
       return sendSuccess(res, 200, 'Updated service subscription price successfully', client);
     }
@@ -364,7 +456,7 @@ export const subscribeToService = asyncHandler(async (req: Request, res: Respons
   
   client.subscribedServices.push({
     serviceId: svc._id,
-    customPrice: customPrice,
+    customPrice: effectiveCustomPrice,
     customUsers: [],
     subscribedAt: new Date()
   });
@@ -379,6 +471,20 @@ export const subscribeToService = asyncHandler(async (req: Request, res: Respons
       svc._id,
       req.user?._id
     ).catch(err => console.error('[subscribeToService] Auto doc request error:', err));
+  }
+
+  // Automatically generate task immediately for this newly subscribed service
+  try {
+    await scanAndGenerateRecurringTasks({
+      tenantId: req.tenantId,
+      clientId: client._id,
+      serviceId: svc._id,
+      forceAll: true,
+      runType: 'Manual',
+      triggeredBy: req.user?._id
+    });
+  } catch (err) {
+    console.error('[subscribeToService] Auto task generation error:', err);
   }
 
   return sendSuccess(res, 200, 'Subscribed to service successfully', client);
@@ -406,7 +512,11 @@ export const unsubscribeFromService = asyncHandler(async (req: Request, res: Res
 
   if (client.subscribedServices) {
     client.subscribedServices = client.subscribedServices.filter(
-      s => s.serviceId.toString() !== serviceId && (s as any)._id?.toString() !== serviceId
+      s => {
+        const sId = (s.serviceId?._id || s.serviceId)?.toString();
+        const subId = (s as any)._id?.toString();
+        return sId !== serviceId && subId !== serviceId;
+      }
     );
     await client.save();
   }

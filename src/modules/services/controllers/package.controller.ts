@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { Package } from '../schemas/package.schema';
+import { Service } from '../schemas';
 import { Client } from '../../clients/schemas/client.schema';
 import { sendSuccess } from '../../../common/responses/api-response';
 import { asyncHandler } from '../../../utils/async-handler';
@@ -20,10 +21,21 @@ const updatePackageSchema = createPackageSchema.partial();
 
 export const createPackage = asyncHandler(async (req: Request, res: Response) => {
   const validatedData = createPackageSchema.parse(req.body);
-  
+  const tenantId = req.user!.tenantId;
+
+  // Validate that all services exist and belong to this tenant
+  const existingServices = await Service.find({
+    _id: { $in: validatedData.serviceIds },
+    tenantId
+  }).select('_id');
+
+  if (existingServices.length !== validatedData.serviceIds.length) {
+    throw new ApiError(400, 'One or more selected services do not exist in your organization.');
+  }
+
   const pkg = await Package.create({
     ...validatedData,
-    tenantId: req.user!.tenantId
+    tenantId
   });
 
   return sendSuccess(res, 201, 'Package created successfully', pkg);
@@ -32,29 +44,52 @@ export const createPackage = asyncHandler(async (req: Request, res: Response) =>
 export const getPackages = asyncHandler(async (req: Request, res: Response) => {
   const packages = await Package.find({ tenantId: req.user!.tenantId })
     .populate('serviceIds', 'name isEnabled')
-    .sort({ createdAt: -1 });
+    .sort({ createdAt: -1 })
+    .lean();
 
-  return sendSuccess(res, 200, 'Packages retrieved successfully', packages);
+  const sanitized = packages.map(pkg => ({
+    ...pkg,
+    serviceIds: (pkg.serviceIds || []).filter(Boolean)
+  }));
+
+  return sendSuccess(res, 200, 'Packages retrieved successfully', sanitized);
 });
 
 export const getPackageById = asyncHandler(async (req: Request, res: Response) => {
   const pkg = await Package.findOne({ 
     _id: req.params.id, 
     tenantId: req.user!.tenantId 
-  }).populate('serviceIds', 'name isEnabled');
+  }).populate('serviceIds', 'name isEnabled').lean();
 
   if (!pkg) {
     throw new ApiError(404, 'Package not found');
   }
 
-  return sendSuccess(res, 200, 'Package retrieved successfully', pkg);
+  const sanitized = {
+    ...pkg,
+    serviceIds: (pkg.serviceIds || []).filter(Boolean)
+  };
+
+  return sendSuccess(res, 200, 'Package retrieved successfully', sanitized);
 });
 
 export const updatePackage = asyncHandler(async (req: Request, res: Response) => {
   const validatedData = updatePackageSchema.parse(req.body);
-  
+  const tenantId = req.user!.tenantId;
+
+  if (validatedData.serviceIds && validatedData.serviceIds.length > 0) {
+    const existingServices = await Service.find({
+      _id: { $in: validatedData.serviceIds },
+      tenantId
+    }).select('_id');
+
+    if (existingServices.length !== validatedData.serviceIds.length) {
+      throw new ApiError(400, 'One or more selected services do not exist in your organization.');
+    }
+  }
+
   const pkg = await Package.findOneAndUpdate(
-    { _id: req.params.id, tenantId: req.user!.tenantId },
+    { _id: req.params.id, tenantId },
     { $set: validatedData },
     { new: true, runValidators: true }
   ).populate('serviceIds', 'name isEnabled');

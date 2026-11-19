@@ -719,7 +719,7 @@ export class QuotationService {
           monthlyTrends: [
             {
               $group: {
-                _id: { $dateToString: { format: '%Y-%m', date: '$date' } },
+                _id: { $dateToString: { format: '%Y-%m', date: { $toDate: '$date' } } },
                 totalQuotations: { $sum: 1 },
                 totalValue: { $sum: '$totals.grandTotal' },
                 convertedCount: {

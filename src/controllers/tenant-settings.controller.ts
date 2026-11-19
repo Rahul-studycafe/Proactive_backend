@@ -147,6 +147,14 @@ export const updateBillingEntity = asyncHandler(async (req: Request, res: Respon
   return sendSuccess(res, 200, 'Billing entity updated successfully', entity);
 });
 
+export const uploadBillingEntityLogo = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.file) {
+    throw new ApiError(400, 'No logo uploaded', 'FILE_REQUIRED');
+  }
+  const logoUrl = `/public/uploads/logos/${req.file.filename}`;
+  return sendSuccess(res, 200, 'Logo uploaded successfully', { logoUrl });
+});
+
 export const deleteBillingEntity = asyncHandler(async (req: Request, res: Response) => {
   if (!req.tenantId) {
     throw new ApiError(403, 'Tenant context missing', 'FORBIDDEN');

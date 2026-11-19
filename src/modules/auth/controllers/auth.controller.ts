@@ -11,7 +11,8 @@ import Razorpay from 'razorpay';
 import z from 'zod';
 import { calculateSubscriptionPrice } from '../../../utils/pricing';
 import { Otp } from '../../../models/Otp';
-import { sendOtpEmail, sendPasswordResetEmail } from '../services/email.service';
+import { EmailChangeRequest } from '../../../models/EmailChangeRequest';
+import { sendOtpEmail, sendPasswordResetEmail, sendEmailChangeOtpEmail } from '../services/email.service';
 import crypto from 'crypto';
 import { PricingTier } from '../../../models/PricingTier';
 import { PermissionResolverService } from '../../../services/permission-resolver.service';
@@ -221,14 +222,42 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
       throw new ApiError(403, 'Account is deactivated', 'ACCOUNT_DEACTIVATED');
     }
 
-    const org = await Organization.findOne({ ownerId: platformUser._id });
+    let org = await Organization.findOne({ ownerId: platformUser._id });
+    if (!org) {
+      // Defensive fallback in case ownerId was stored as a raw string
+      const rawOrg = await Organization.collection.findOne({
+        $or: [
+          { ownerId: platformUser._id },
+          { ownerId: platformUser._id.toString() }
+        ]
+      });
+      if (rawOrg) {
+        org = await Organization.findById(rawOrg._id);
+      }
+    }
+
     if (!org) {
       throw new ApiError(404, 'Organization not found for platform user', 'ORG_NOT_FOUND');
     }
 
-    const tenantUser = await User.findOne({ tenantId: org._id, isOwner: true })
+    let tenantUser = await User.findOne({ tenantId: org._id, isOwner: true })
       .populate('roleId')
       .setOptions({ skipTenantPlugin: true });
+
+    if (!tenantUser) {
+      // Defensive fallback in case tenantId was stored as a raw string
+      const rawUser = await User.collection.findOne({
+        $or: [
+          { tenantId: org._id, isOwner: true },
+          { tenantId: org._id.toString(), isOwner: true }
+        ]
+      });
+      if (rawUser) {
+        tenantUser = await User.findById(rawUser._id)
+          .populate('roleId')
+          .setOptions({ skipTenantPlugin: true });
+      }
+    }
 
     if (!tenantUser) {
       throw new ApiError(404, 'Owner workspace profile not found', 'USER_NOT_FOUND');
@@ -429,12 +458,19 @@ export const getMe = asyncHandler(async (req: Request, res: Response) => {
     tenantIdStr
   );
 
+  const tenantOrg = user.tenantId as any;
+  const isSuperAdmin = Boolean(user.isOwner || effectiveState.isSuperAdmin);
+  const workspaceRenamedCount = tenantOrg?.workspaceRenamedCount || 0;
+  const canRenameWorkspace = isSuperAdmin && workspaceRenamedCount < 1;
+
   return sendSuccess(res, 200, 'User profile retrieved successfully', {
     user: {
       ...user.toObject(),
-      isSuperAdmin: effectiveState.isSuperAdmin,
+      isSuperAdmin,
       effectivePermissions: effectiveState.permissions,
-      roles: effectiveState.roles
+      roles: effectiveState.roles,
+      canRenameWorkspace,
+      workspaceRenamedCount
     }
   });
 });
@@ -451,7 +487,6 @@ export const uploadAvatar = asyncHandler(async (req: Request, res: Response) => 
   }
 
   // Generate URL for the uploaded file
-  // For production, use NEXT_PUBLIC_API_URL or similar, but relative is fine for now
   const photoUrl = `/public/uploads/avatars/${req.file.filename}`;
 
   const user = await User.findByIdAndUpdate(
@@ -464,7 +499,214 @@ export const uploadAvatar = asyncHandler(async (req: Request, res: Response) => 
     throw new ApiError(404, 'User not found', 'USER_NOT_FOUND');
   }
 
+  if (user.platformUserId) {
+    await PlatformUser.findByIdAndUpdate(user.platformUserId, { photoUrl });
+  }
+
   return sendSuccess(res, 200, 'Avatar uploaded successfully', { photoUrl });
+});
+
+export const deleteAvatar = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  if (!userId) {
+    throw new ApiError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { photoUrl: '' },
+    { new: true }
+  ).setOptions({ skipTenantPlugin: true });
+
+  if (!user) {
+    throw new ApiError(404, 'User not found', 'USER_NOT_FOUND');
+  }
+
+  if (user.platformUserId) {
+    await PlatformUser.findByIdAndUpdate(user.platformUserId, { photoUrl: '' });
+  }
+
+  return sendSuccess(res, 200, 'Avatar removed successfully', { photoUrl: '' });
+});
+
+const updateMeSchema = z.object({
+  name: z.string().min(1, 'Name cannot be empty').optional(),
+  phone: z.string().optional(),
+  mobile: z.string().optional(),
+  location: z.string().optional(),
+  bio: z.string().optional(),
+  email: z.string().email('Invalid email address').optional(),
+});
+
+export const updateMe = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  if (!userId) {
+    throw new ApiError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const parsed = updateMeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    const errors = parsed.error.issues.map((e: z.ZodIssue) => `${e.path.join('.')}: ${e.message}`);
+    throw new ApiError(400, 'Validation Error', 'VALIDATION_FAILED', errors);
+  }
+
+  const user = await User.findById(userId)
+    .populate('roleId')
+    .populate('roleIds')
+    .populate('tenantId')
+    .setOptions({ skipTenantPlugin: true });
+
+  if (!user) {
+    throw new ApiError(404, 'User not found', 'USER_NOT_FOUND');
+  }
+
+  const { name, phone, mobile, location, bio, email } = parsed.data;
+
+  if (name !== undefined) {
+    user.name = name.trim();
+  }
+
+  const phoneVal = phone !== undefined ? phone.trim() : (mobile !== undefined ? mobile.trim() : undefined);
+  if (phoneVal !== undefined) {
+    user.phone = phoneVal;
+    user.mobile = phoneVal;
+  }
+
+  if (location !== undefined) {
+    user.location = location.trim();
+  }
+
+  if (bio !== undefined) {
+    user.bio = bio.trim();
+  }
+
+  if (email !== undefined && email.trim().toLowerCase() !== user.email) {
+    const tenantIdStr =
+      (user.tenantId as any)?._id?.toString() ||
+      (user.tenantId as any)?.toString() ||
+      req.tenantId?.toString() ||
+      '';
+    const effectiveState = await PermissionResolverService.resolveUserPermissions(
+      user._id.toString(),
+      tenantIdStr
+    );
+    const isSuperAdmin = Boolean(user.isOwner || effectiveState.isSuperAdmin);
+
+    if (isSuperAdmin) {
+      throw new ApiError(
+        400,
+        'Super Admin email address cannot be directly updated. Please use the dual-email verification code process.',
+        'VERIFICATION_REQUIRED'
+      );
+    } else {
+      throw new ApiError(
+        403,
+        'Email address cannot be changed once added.',
+        'EMAIL_IMMUTABLE'
+      );
+    }
+  }
+
+  await user.save();
+
+  if (user.platformUserId) {
+    const platformUser = await PlatformUser.findById(user.platformUserId);
+    if (platformUser) {
+      if (name !== undefined) platformUser.name = name.trim();
+      if (phoneVal !== undefined) {
+        platformUser.mobile = phoneVal;
+        platformUser.phone = phoneVal;
+      }
+      if (location !== undefined) platformUser.location = location.trim();
+      if (bio !== undefined) platformUser.bio = bio.trim();
+      if (user.email && user.email !== platformUser.email) {
+        platformUser.email = user.email;
+      }
+      await platformUser.save();
+    }
+  }
+
+  const tenantIdStr =
+    (user.tenantId as any)?._id?.toString() ||
+    (user.tenantId as any)?.toString() ||
+    req.tenantId?.toString() ||
+    '';
+
+  const effectiveState = await PermissionResolverService.resolveUserPermissions(
+    user._id.toString(),
+    tenantIdStr
+  );
+
+  const tenantOrg = user.tenantId as any;
+  const isSuperAdmin = Boolean(user.isOwner || effectiveState.isSuperAdmin);
+  const workspaceRenamedCount = tenantOrg?.workspaceRenamedCount || 0;
+  const canRenameWorkspace = isSuperAdmin && workspaceRenamedCount < 1;
+
+  return sendSuccess(res, 200, 'Profile updated successfully', {
+    user: {
+      ...user.toObject(),
+      isSuperAdmin,
+      effectivePermissions: effectiveState.permissions,
+      roles: effectiveState.roles,
+      canRenameWorkspace,
+      workspaceRenamedCount
+    }
+  });
+});
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required'),
+  newPassword: z.string().min(6, 'New password must be at least 6 characters'),
+});
+
+export const changePassword = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  if (!userId) {
+    throw new ApiError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const parsed = changePasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    const errors = parsed.error.issues.map((e: z.ZodIssue) => `${e.path.join('.')}: ${e.message}`);
+    throw new ApiError(400, 'Validation Error', 'VALIDATION_FAILED', errors);
+  }
+
+  const { currentPassword, newPassword } = parsed.data;
+
+  const user = await User.findById(userId)
+    .select('+password')
+    .setOptions({ skipTenantPlugin: true });
+
+  if (!user) {
+    throw new ApiError(404, 'User not found', 'USER_NOT_FOUND');
+  }
+
+  let verified = false;
+
+  if (user.platformUserId) {
+    const platformUser = await PlatformUser.findById(user.platformUserId).select('+password');
+    if (platformUser) {
+      verified = await platformUser.comparePassword(currentPassword);
+      if (!verified && user.password) {
+        verified = await user.comparePassword(currentPassword);
+      }
+      if (verified) {
+        platformUser.password = newPassword;
+        await platformUser.save();
+      }
+    }
+  } else if (user.password) {
+    verified = await user.comparePassword(currentPassword);
+  }
+
+  if (!verified) {
+    throw new ApiError(400, 'Current password is incorrect', 'INVALID_PASSWORD');
+  }
+
+  user.password = newPassword;
+  await user.save();
+
+  return sendSuccess(res, 200, 'Password updated successfully', null);
 });
 
 export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
@@ -595,4 +837,225 @@ export const activateInvite = asyncHandler(async (req: Request, res: Response) =
   await user.save();
 
   return sendSuccess(res, 200, 'Account activated successfully! You can now log in.', null);
+});
+
+const requestEmailChangeSchema = z.object({
+  newEmail: z.string().email('Valid email address is required'),
+});
+
+export const requestEmailChange = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  if (!userId) {
+    throw new ApiError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const parsed = requestEmailChangeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    const errors = parsed.error.issues.map((e: z.ZodIssue) => `${e.path.join('.')}: ${e.message}`);
+    throw new ApiError(400, 'Validation Error', 'VALIDATION_FAILED', errors);
+  }
+
+  const user = await User.findById(userId)
+    .populate('tenantId')
+    .setOptions({ skipTenantPlugin: true });
+
+  if (!user) {
+    throw new ApiError(404, 'User not found', 'USER_NOT_FOUND');
+  }
+
+  const tenantIdStr =
+    (user.tenantId as any)?._id?.toString() ||
+    (user.tenantId as any)?.toString() ||
+    req.tenantId?.toString() ||
+    '';
+
+  const effectiveState = await PermissionResolverService.resolveUserPermissions(
+    user._id.toString(),
+    tenantIdStr
+  );
+
+  const isSuperAdmin = Boolean(user.isOwner || effectiveState.isSuperAdmin);
+  if (!isSuperAdmin) {
+    throw new ApiError(
+      403,
+      'Only the Super Admin can change their email address. Staff email addresses cannot be modified.',
+      'FORBIDDEN'
+    );
+  }
+
+  const currentEmail = (user.email || '').toLowerCase().trim();
+  const newEmail = parsed.data.newEmail.toLowerCase().trim();
+
+  if (currentEmail === newEmail) {
+    throw new ApiError(400, 'New email address must be different from current email', 'SAME_EMAIL');
+  }
+
+  // Check if new email is already used by any platform user or tenant user
+  const existingPlatformUser = await PlatformUser.findOne({ email: newEmail });
+  if (existingPlatformUser && existingPlatformUser._id.toString() !== user.platformUserId?.toString()) {
+    throw new ApiError(409, 'This email address is already registered in the system', 'EMAIL_TAKEN');
+  }
+
+  const existingTenantUser = await User.findOne({ email: newEmail });
+  if (existingTenantUser && existingTenantUser._id.toString() !== user._id.toString()) {
+    throw new ApiError(409, 'This email address is already in use by another user', 'EMAIL_TAKEN');
+  }
+
+  // Generate two distinct 6-digit verification codes
+  const currentEmailOtp = Math.floor(100000 + Math.random() * 900000).toString();
+  const newEmailOtp = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+  // Clear previous pending requests for this user
+  await EmailChangeRequest.deleteMany({ userId: user._id });
+
+  // Store new request
+  await EmailChangeRequest.create({
+    userId: user._id,
+    currentEmail,
+    newEmail,
+    currentEmailOtp,
+    newEmailOtp,
+    expiresAt,
+  });
+
+  // Send verification code to current email
+  try {
+    await sendEmailChangeOtpEmail(currentEmail, currentEmailOtp, 'current', newEmail);
+  } catch (err) {
+    console.error('[Email Change] Failed to send OTP to current email:', err);
+    throw new ApiError(500, 'Failed to send verification code to current email address. Please try again.', 'EMAIL_SEND_FAILED');
+  }
+
+  // Send verification code to new email
+  try {
+    await sendEmailChangeOtpEmail(newEmail, newEmailOtp, 'new', currentEmail);
+  } catch (err) {
+    console.error('[Email Change] Failed to send OTP to new email:', err);
+    throw new ApiError(500, 'Failed to send verification code to new email address. Please verify the address and try again.', 'EMAIL_SEND_FAILED');
+  }
+
+  return sendSuccess(res, 200, 'Verification codes sent to both email addresses', {
+    currentEmail,
+    newEmail,
+    expiresInSeconds: 600
+  });
+});
+
+const verifyEmailChangeSchema = z.object({
+  newEmail: z.string().email('Valid email address is required'),
+  currentEmailOtp: z.string().min(4, 'Current email verification code is required'),
+  newEmailOtp: z.string().min(4, 'New email verification code is required'),
+});
+
+export const verifyEmailChange = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user?._id;
+  if (!userId) {
+    throw new ApiError(401, 'Unauthorized', 'UNAUTHORIZED');
+  }
+
+  const parsed = verifyEmailChangeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    const errors = parsed.error.issues.map((e: z.ZodIssue) => `${e.path.join('.')}: ${e.message}`);
+    throw new ApiError(400, 'Validation Error', 'VALIDATION_FAILED', errors);
+  }
+
+  const user = await User.findById(userId)
+    .populate('tenantId')
+    .setOptions({ skipTenantPlugin: true });
+
+  if (!user) {
+    throw new ApiError(404, 'User not found', 'USER_NOT_FOUND');
+  }
+
+  const tenantIdStr =
+    (user.tenantId as any)?._id?.toString() ||
+    (user.tenantId as any)?.toString() ||
+    req.tenantId?.toString() ||
+    '';
+
+  const effectiveState = await PermissionResolverService.resolveUserPermissions(
+    user._id.toString(),
+    tenantIdStr
+  );
+
+  const isSuperAdmin = Boolean(user.isOwner || effectiveState.isSuperAdmin);
+  if (!isSuperAdmin) {
+    throw new ApiError(
+      403,
+      'Only the Super Admin can change their email address.',
+      'FORBIDDEN'
+    );
+  }
+
+  const { newEmail, currentEmailOtp, newEmailOtp } = parsed.data;
+  const normalizedNewEmail = newEmail.toLowerCase().trim();
+
+  // Find active change request
+  const request = await EmailChangeRequest.findOne({
+    userId: user._id,
+    newEmail: normalizedNewEmail,
+  });
+
+  if (!request) {
+    throw new ApiError(
+      400,
+      'No pending email change request found for this address. Please request a new verification code.',
+      'REQUEST_NOT_FOUND'
+    );
+  }
+
+  if (request.expiresAt < new Date()) {
+    await EmailChangeRequest.deleteOne({ _id: request._id });
+    throw new ApiError(
+      400,
+      'Verification codes have expired. Please request new verification codes.',
+      'VERIFICATION_EXPIRED'
+    );
+  }
+
+  // Validate OTP for current email
+  if (request.currentEmailOtp.trim() !== currentEmailOtp.trim()) {
+    throw new ApiError(
+      400,
+      'Invalid verification code for your current email address. Please check your inbox and try again.',
+      'INVALID_CURRENT_OTP'
+    );
+  }
+
+  // Validate OTP for new email
+  if (request.newEmailOtp.trim() !== newEmailOtp.trim()) {
+    throw new ApiError(
+      400,
+      'Invalid verification code for your new email address. Please check your new inbox and try again.',
+      'INVALID_NEW_OTP'
+    );
+  }
+
+  // Re-verify uniqueness
+  const existingPlatformUser = await PlatformUser.findOne({ email: normalizedNewEmail });
+  if (existingPlatformUser && existingPlatformUser._id.toString() !== user.platformUserId?.toString()) {
+    throw new ApiError(409, 'This email address is already registered in the system', 'EMAIL_TAKEN');
+  }
+
+  const existingTenantUser = await User.findOne({ email: normalizedNewEmail });
+  if (existingTenantUser && existingTenantUser._id.toString() !== user._id.toString()) {
+    throw new ApiError(409, 'This email address is already in use by another user', 'EMAIL_TAKEN');
+  }
+
+  // Update user email
+  user.email = normalizedNewEmail;
+  await user.save();
+
+  // Update platform user email if applicable
+  if (user.platformUserId) {
+    await PlatformUser.findByIdAndUpdate(user.platformUserId, { email: normalizedNewEmail });
+  }
+
+  // Cleanup change requests
+  await EmailChangeRequest.deleteMany({ userId: user._id });
+
+  return sendSuccess(res, 200, 'Super Admin email address successfully verified and updated', {
+    email: user.email,
+  });
 });

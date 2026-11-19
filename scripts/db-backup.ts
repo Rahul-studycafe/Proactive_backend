@@ -98,7 +98,7 @@ async function fallbackMongooseBackup(uri: string, outputPath: string) {
       console.log(`  âžœ Exported ${colName}: ${docs.length} document(s)`);
     }
 
-    const jsonString = JSON.stringify({
+    const jsonString = mongoose.mongo.BSON.EJSON.stringify({
       database: conn.name,
       exportedAt: new Date().toISOString(),
       collectionCount: Object.keys(dumpData).length,

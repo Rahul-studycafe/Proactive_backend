@@ -150,6 +150,63 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
   return sendSuccess(res, 201, 'User created successfully', { user: userResponse });
 });
 
+export const resendStaffInvitation = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  const user = await User.findById(id).setOptions({ skipTenantPlugin: true });
+  if (!user) {
+    throw new ApiError(404, 'User not found', 'USER_NOT_FOUND');
+  }
+
+  // Tenant security guard
+  const reqTenantId = req.tenantId?.toString() || (req.user as any)?.tenantId?.toString();
+  if (user.tenantId.toString() !== reqTenantId && !(req.user as any)?.isSuperAdmin) {
+    throw new ApiError(403, 'Unauthorized access to user outside your organization', 'FORBIDDEN');
+  }
+
+  if (user.isOwner) {
+    throw new ApiError(400, 'Cannot resend invitation to the Practice Owner', 'CANNOT_INVITE_OWNER');
+  }
+
+  if (!user.email) {
+    throw new ApiError(400, 'User has no email address configured', 'EMAIL_REQUIRED');
+  }
+
+  // Generate fresh invitation token and 7-day expiration
+  const invitationToken = crypto.randomBytes(32).toString('hex');
+  const invitationExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+  user.invitationToken = invitationToken;
+  user.invitationExpiresAt = invitationExpiresAt;
+  user.invitationStatus = 'invited';
+  await user.save();
+
+  // Send invitation email
+  const org = await Organization.findById(user.tenantId);
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8080';
+  const inviteLink = `${frontendUrl}/activate?token=${invitationToken}`;
+
+  try {
+    await sendStaffInvitationEmail(
+      user.email,
+      inviteLink,
+      org?.name || 'Your Practice',
+      req.user?.name || 'Administrator'
+    );
+  } catch (error) {
+    console.error('[Invitation Error] Failed to send staff invitation email:', error);
+    throw new ApiError(500, 'Failed to send invitation email. Please check server email settings.', 'EMAIL_SEND_FAILED');
+  }
+
+  return sendSuccess(res, 200, `Invitation email resent successfully to ${user.email}`, {
+    userId: user._id,
+    email: user.email,
+    invitationStatus: user.invitationStatus,
+    invitationExpiresAt: user.invitationExpiresAt,
+    inviteLink
+  });
+});
+
 export const getUsers = asyncHandler(async (req: Request, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
@@ -282,7 +339,10 @@ export const updateUser = asyncHandler(async (req: Request, res: Response) => {
 
   if (updates.name !== undefined) user.name = updates.name;
   if (updates.username !== undefined) user.username = updates.username;
-  if (updates.email !== undefined) user.email = updates.email;
+  if (updates.email !== undefined && user.email && updates.email.trim().toLowerCase() !== user.email.toLowerCase()) {
+    throw new ApiError(403, 'Email address cannot be changed once added.', 'EMAIL_IMMUTABLE');
+  }
+  if (updates.email !== undefined) user.email = updates.email.trim().toLowerCase();
   if (updates.mobile !== undefined) user.mobile = updates.mobile;
   if (updates.photoUrl !== undefined) user.photoUrl = updates.photoUrl;
   if (updates.password !== undefined) user.password = updates.password;

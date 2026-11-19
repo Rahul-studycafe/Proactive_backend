@@ -39,6 +39,7 @@ const createUploadMiddleware = (folderName: string) => {
 
 export const uploadAvatarMiddleware = createUploadMiddleware('avatars');
 export const uploadClientMiddleware = createUploadMiddleware('clients');
+export const uploadLogoMiddleware = createUploadMiddleware('logos');
 
 const receiptFileFilter = (req: any, file: any, cb: any) => {
   const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp', 'application/pdf'];
