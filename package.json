@@ -15,6 +15,8 @@
     "prepare": "husky install",
     "seed:promo": "ts-node-dev --transpile-only scripts/add-promocode.ts",
     "migrate:configs": "ts-node-dev --transpile-only scripts/migrate-tenant-configurations.ts",
+    "migrate:roles": "ts-node-dev --transpile-only scripts/seed-missing-default-roles.ts",
+    "migrate:roles:dry-run": "ts-node-dev --transpile-only scripts/seed-missing-default-roles.ts --dry-run",
     "seed:sso-client": "ts-node-dev --transpile-only src/scripts/seed-sso-client.ts",
     "db:backup": "ts-node --transpile-only scripts/db-backup.ts",
     "db:restore": "ts-node --transpile-only scripts/db-restore.ts",
